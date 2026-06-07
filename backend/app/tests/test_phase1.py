@@ -108,6 +108,16 @@ async def test_all_nodes_have_768d_embeddings(seeded):
 # -- graph reads --------------------------------------------------------------
 
 
+def test_list_spines_returns_seeded_three(client, seeded):
+    r = client.get("/graph/spines", headers=auth_header(client, LEARNER, "learner"))
+    assert r.status_code == 200, r.text
+    spines = r.json()
+    titles = {s["title"] for s in spines}
+    assert {"The Foundations", "The Conviction", "The Contrarian Bet"} <= titles
+    foundations = next(s for s in spines if s["title"] == "The Foundations")
+    assert foundations["node_count"] == 10
+
+
 def test_get_foundations_spine_ordered(client, seeded):
     r = client.get(
         f"/graph/spines/{FOUNDATIONS_SPINE_ID}",

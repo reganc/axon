@@ -12,12 +12,20 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ...errors import ConflictError, NotFoundError
-from ...ports import Edge, EdgeType, Node, NodeIn, Subgraph, SpineWithNodes
+from ...ports import (
+    Edge,
+    EdgeType,
+    Node,
+    NodeIn,
+    SpineSummary,
+    SpineWithNodes,
+    Subgraph,
+)
 from ...tables import canonical_nodes, edges, sources, spines
 
 # Columns returned as a Node DTO (embedding is deliberately excluded — it must
@@ -302,6 +310,30 @@ class Content:
             if not nodes:
                 raise NotFoundError("no nodes found for the given ids")
             return Subgraph(nodes=nodes, edges=kept)
+
+    async def list_spines(self) -> list[SpineSummary]:
+        async with self._sm() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        spines.c.id,
+                        spines.c.title,
+                        spines.c.subject,
+                        spines.c.description,
+                        func.jsonb_array_length(spines.c.node_sequence).label("n"),
+                    ).order_by(spines.c.subject, spines.c.title)
+                )
+            ).all()
+        return [
+            SpineSummary(
+                id=r._mapping[spines.c.id],
+                title=r._mapping[spines.c.title],
+                subject=r._mapping[spines.c.subject],
+                description=r._mapping[spines.c.description],
+                node_count=r._mapping["n"] or 0,
+            )
+            for r in rows
+        ]
 
     async def get_spine(self, spine_id: UUID) -> SpineWithNodes:
         async with self._sm() as session:
