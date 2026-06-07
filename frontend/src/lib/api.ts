@@ -2,6 +2,7 @@
 import { getToken } from "./auth";
 import type {
   Checkout,
+  CheckoutSummary,
   EdgeDTO,
   Facets,
   NodeDTO,
@@ -9,6 +10,7 @@ import type {
   Role,
   SpineSummary,
   SpineWithNodes,
+  StreamEvent,
 } from "./types";
 
 export const API_BASE =
@@ -97,5 +99,10 @@ export const createCheckout = (spineId: string | null, subject: string | null) =
 
 export const getOverlay = (checkoutId: string) =>
   request<NodeState[]>(`/library/checkout/${checkoutId}`);
+
+export const listCheckouts = () => request<CheckoutSummary[]>("/library/checkouts");
+
+export const getConversation = (checkoutId: string) =>
+  request<StreamEvent[]>(`/library/checkout/${checkoutId}/conversation`);
 
 export { ApiError };

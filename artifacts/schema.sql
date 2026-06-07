@@ -138,6 +138,19 @@ CREATE TABLE interaction_events (
 CREATE INDEX idx_events_checkout ON interaction_events(checkout_id, ts DESC);
 
 -- ----------------------------------------------------------------------------
+--  CONVERSATION_EVENTS — durable per-checkout transcript + canvas log, replayed
+--  on load so a learning session survives the browser tab / a new device.
+-- ----------------------------------------------------------------------------
+CREATE TABLE conversation_events (
+    id          BIGSERIAL PRIMARY KEY,
+    checkout_id UUID NOT NULL REFERENCES checkouts(id) ON DELETE CASCADE,
+    ts          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    type        TEXT NOT NULL,
+    data        JSONB NOT NULL DEFAULT '{}'
+);
+CREATE INDEX idx_conversation_checkout ON conversation_events(checkout_id, id);
+
+-- ----------------------------------------------------------------------------
 --  USAGE_EVENTS — the LLM cost ledger (cost control, specs/06). Every cloud
 --  call is metered here so budgets can be enforced and spend audited.
 -- ----------------------------------------------------------------------------

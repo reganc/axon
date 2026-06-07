@@ -7,7 +7,7 @@ import { CompanionPanel } from "@/components/CompanionPanel";
 import { GraphCanvas } from "@/components/GraphCanvas";
 import { NodeView } from "@/components/NodeView";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { getSpine } from "@/lib/api";
+import { getConversation, getSpine } from "@/lib/api";
 import { useCompanionStream } from "@/lib/useCompanionStream";
 import { useGraphStore } from "@/store/graphStore";
 import { useTranscriptStore } from "@/store/transcriptStore";
@@ -25,16 +25,35 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     }
     initGraph(checkoutId);
     initTranscript(checkoutId);
-    // Seed the canvas with the checked-out spine (highlighted path) unless we
-    // already restored a persisted graph for this checkout.
-    const spineId =
-      typeof window !== "undefined" ? sessionStorage.getItem(`axon.spine.${checkoutId}`) : null;
-    if (spineId && Object.keys(useGraphStore.getState().nodes).length === 0) {
-      getSpine(spineId)
-        .then((s) => useGraphStore.getState().seedSpine(s.nodes))
-        .catch(() => {
-          /* spine may have been removed; the canvas just starts empty */
-        });
+
+    const seedSpine = () => {
+      const spineId =
+        typeof window !== "undefined" ? sessionStorage.getItem(`axon.spine.${checkoutId}`) : null;
+      if (spineId) {
+        getSpine(spineId)
+          .then((s) => useGraphStore.getState().seedSpine(s.nodes))
+          .catch(() => {});
+      }
+    };
+
+    // If nothing was restored from this tab's sessionStorage (fresh tab, a resumed
+    // session, or another device), rebuild from the durable server-side log so the
+    // conversation + canvas come back — then layer the spine path on top.
+    if (Object.keys(useGraphStore.getState().nodes).length === 0) {
+      getConversation(checkoutId)
+        .then((events) => {
+          const g = useGraphStore.getState();
+          const t = useTranscriptStore.getState();
+          for (const ev of events) {
+            if (ev.type === "node.create" || ev.type === "node.update" || ev.type === "edge.create") {
+              g.apply(ev);
+            } else {
+              t.apply(ev);
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(seedSpine);
     }
   }, [checkoutId, initGraph, initTranscript]);
 

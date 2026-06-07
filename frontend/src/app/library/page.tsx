@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createCheckout,
   getFacets,
+  listCheckouts,
   listEntryPoints,
   listNodes,
   listSpines,
@@ -15,13 +16,14 @@ import {
 } from "@/lib/api";
 import { clearSession } from "@/lib/auth";
 import { kindGlyph } from "@/lib/kind";
-import type { Facets, NodeDTO, SpineSummary } from "@/lib/types";
+import type { CheckoutSummary, Facets, NodeDTO, SpineSummary } from "@/lib/types";
 
 function LibraryInner() {
   const router = useRouter();
   const [spines, setSpines] = useState<SpineSummary[] | null>(null);
   const [anchors, setAnchors] = useState<NodeDTO[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
+  const [sessions, setSessions] = useState<CheckoutSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -37,7 +39,17 @@ function LibraryInner() {
       .catch((e) => setError(e instanceof ApiError ? e.message : "failed to load spines"));
     listEntryPoints().then(setAnchors).catch(() => {});
     getFacets().then(setFacets).catch(() => {});
+    listCheckouts().then(setSessions).catch(() => {});
   }, []);
+
+  const resume = (s: CheckoutSummary) => {
+    if (s.spine_id) sessionStorage.setItem(`axon.spine.${s.id}`, s.spine_id);
+    sessionStorage.setItem(
+      `axon.spine.title.${s.id}`,
+      s.spine_title ?? s.subject ?? "Session",
+    );
+    router.push(`/learn/${s.id}`);
+  };
 
   const runSearch = async () => {
     const q = query.trim();
@@ -172,6 +184,34 @@ function LibraryInner() {
       ) : (
         <>
           {!spines && <p className="text-sm text-muted">Loading…</p>}
+
+          {sessions.length > 0 && (
+            <section className="mb-10" aria-label="Your sessions">
+              <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">
+                Continue a session
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {sessions.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => resume(s)}
+                    className="rounded-lg border border-border bg-surface p-4 text-left hover:border-accent"
+                  >
+                    <div className="font-medium text-fg">
+                      {s.spine_title ?? s.subject ?? "Free-roam session"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted">
+                      {s.message_count} message{s.message_count === 1 ? "" : "s"}
+                      {s.last_activity
+                        ? ` · ${new Date(s.last_activity).toLocaleString()}`
+                        : ""}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           {anchors.length > 0 && (
             <section className="mb-10" aria-label="Curiosity anchors">

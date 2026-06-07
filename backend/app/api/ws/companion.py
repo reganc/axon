@@ -101,6 +101,8 @@ async def _send(ws: WebSocket, cid, ev: StreamEvent) -> None:
     payload = {"type": ev.type, "data": ev.data}
     await ws.send_json(payload)
     await bus.publish(cid, payload)
+    # durable log: replayable events are persisted so the session survives the tab
+    await library().record_event(cid, ev.type, ev.data)
 
 
 async def _safe_close(ws: WebSocket) -> None:

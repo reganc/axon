@@ -140,6 +140,20 @@ interaction_events = Table(
     Column("payload", JSONB, nullable=False, server_default=text("'{}'")),
 )
 
+# conversation_events — durable per-checkout transcript + canvas log, replayed on
+# load so a session survives the browser tab / a new device.
+conversation_events = Table(
+    "conversation_events",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column("checkout_id", UUID(as_uuid=True), nullable=False),
+    Column(
+        "ts", TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+    ),
+    Column("type", Text, nullable=False),
+    Column("data", JSONB, nullable=False, server_default=text("'{}'")),
+)
+
 # usage_events — the cost ledger (Phase: cost control). Every cloud LLM call is
 # metered here so budgets can be enforced and spend audited.
 usage_events = Table(
@@ -171,5 +185,6 @@ __all__ = [
     "checkouts",
     "node_states",
     "interaction_events",
+    "conversation_events",
     "usage_events",
 ]

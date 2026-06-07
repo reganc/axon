@@ -142,6 +142,21 @@ class Checkout(BaseModel):
     subject: str | None = None
 
 
+class CheckoutSummary(BaseModel):
+    id: UUID
+    subject: str | None = None
+    spine_id: UUID | None = None
+    spine_title: str | None = None
+    created_at: datetime
+    last_activity: datetime | None = None
+    message_count: int = 0
+
+
+class ConversationEvent(BaseModel):
+    type: str
+    data: dict = Field(default_factory=dict)
+
+
 class NodeState(BaseModel):
     checkout_id: UUID
     node_id: UUID

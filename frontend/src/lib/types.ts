@@ -62,6 +62,16 @@ export interface Checkout {
   subject?: string | null;
 }
 
+export interface CheckoutSummary {
+  id: string;
+  subject?: string | null;
+  spine_id?: string | null;
+  spine_title?: string | null;
+  created_at: string;
+  last_activity?: string | null;
+  message_count: number;
+}
+
 export interface EdgeDTO {
   id: string;
   src_node: string;
