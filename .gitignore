@@ -36,3 +36,7 @@ playwright/.cache/
 
 # Handoff artifact (skeleton already unpacked into the tree)
 axon_handoff_v1.zip
+
+# Editor swap files
+*.swp
+*.swo

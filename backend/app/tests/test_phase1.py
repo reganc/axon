@@ -104,11 +104,17 @@ async def test_all_nodes_have_768d_embeddings(seeded):
         )
         == 31
     )
+    # every *seed-loaded* node is embedded (nodes CRUD'd directly elsewhere may
+    # legitimately have no embedding until the canonicalizer computes one)
     assert (
-        await _scalar("SELECT count(*) FROM canonical_nodes WHERE embedding IS NULL")
+        await _scalar(
+            "SELECT count(*) FROM canonical_nodes WHERE source_ref LIKE 'lecun/%' AND embedding IS NULL"
+        )
         == 0
     )
-    dims = await _scalar("SELECT vector_dims(embedding) FROM canonical_nodes LIMIT 1")
+    dims = await _scalar(
+        "SELECT vector_dims(embedding) FROM canonical_nodes WHERE source_ref LIKE 'lecun/%' LIMIT 1"
+    )
     assert dims == 768
 
 

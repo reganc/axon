@@ -3,14 +3,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { createCheckout, listEntryPoints, listSpines, ApiError } from "@/lib/api";
+import { createCheckout, getFacets, listEntryPoints, listSpines, ApiError } from "@/lib/api";
 import { clearSession } from "@/lib/auth";
-import type { NodeDTO, SpineSummary } from "@/lib/types";
+import type { Facets, NodeDTO, SpineSummary } from "@/lib/types";
 
 function LibraryInner() {
   const router = useRouter();
   const [spines, setSpines] = useState<SpineSummary[] | null>(null);
   const [anchors, setAnchors] = useState<NodeDTO[]>([]);
+  const [facets, setFacets] = useState<Facets | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -22,6 +23,11 @@ function LibraryInner() {
       .then(setAnchors)
       .catch(() => {
         /* anchors are optional cold-start sugar; ignore if unavailable */
+      });
+    getFacets()
+      .then(setFacets)
+      .catch(() => {
+        /* the browse lens is optional; ignore if unavailable */
       });
   }, []);
 
@@ -96,6 +102,34 @@ function LibraryInner() {
                 {a.hook && <p className="mt-1 text-sm text-muted">{a.hook}</p>}
               </button>
             ))}
+          </div>
+        </section>
+      )}
+
+      {facets && (
+        <section className="mb-10" aria-label="Browse the graph">
+          <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">
+            Browse the graph
+            <span className="ml-2 normal-case text-muted">· {facets.node_total} nodes</span>
+          </h2>
+          <div className="space-y-3">
+            {facets.groups
+              .filter((g) => g.values.length > 0)
+              .map((g) => (
+                <div key={g.dimension} className="flex flex-wrap items-center gap-2">
+                  <span className="w-16 text-xs uppercase tracking-wide text-muted">
+                    {g.dimension}
+                  </span>
+                  {g.values.map((v) => (
+                    <span
+                      key={v.label}
+                      className="rounded-full border border-border bg-surface px-2.5 py-0.5 text-xs text-fg"
+                    >
+                      {v.label} <span className="text-muted">{v.node_count}</span>
+                    </span>
+                  ))}
+                </div>
+              ))}
           </div>
         </section>
       )}

@@ -15,6 +15,15 @@ test("check out lands on the learning canvas", async ({ page }) => {
   await expect(page).toHaveURL(/\/learn\//);
 });
 
+test("browse facets are derived from the graph", async ({ page }) => {
+  await login(page);
+  const browse = page.getByLabel("Browse the graph");
+  await expect(browse).toBeVisible();
+  // the type facet reflects the graph's node kinds
+  await expect(browse.getByText("concept").first()).toBeVisible();
+  await expect(browse.getByText("person").first()).toBeVisible();
+});
+
 test("cold-start curiosity anchors surface question and person nodes", async ({ page }) => {
   await login(page);
   const anchors = page.getByLabel("Curiosity anchors");
