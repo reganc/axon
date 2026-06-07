@@ -8,6 +8,7 @@ serialize over the API and the WebSocket for free.
 Implementations live in app/seams/<name>/. Phase 0 ships stubs that raise
 NotImplementedError (surfaced as HTTP 501); later phases replace them.
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -27,6 +28,7 @@ EdgeType = Literal[
 ]
 Origin = Literal["authored", "ai_generated", "ai_extended"]
 Tier = Literal["fast", "reason"]
+
 
 # ---------------------------------------------------------------------------
 # DTOs
@@ -142,7 +144,9 @@ class Msg(BaseModel):
 
 class StreamEvent(BaseModel):
     # The one stream the Tutor produces; the frontend demuxes into voice + canvas.
-    type: Literal["say", "ask", "node.create", "node.update", "edge.create", "status", "done"]
+    type: Literal[
+        "say", "ask", "node.create", "node.update", "edge.create", "status", "done"
+    ]
     data: dict = Field(default_factory=dict)
 
 
@@ -193,8 +197,12 @@ class LLMPort(Protocol):
 
 @runtime_checkable
 class CompanionPort(Protocol):
-    def run_turn(self, checkout_id: UUID, message: str) -> AsyncIterator[StreamEvent]: ...
-    def pull_thread(self, checkout_id: UUID, node_id: UUID) -> AsyncIterator[StreamEvent]: ...
+    def run_turn(
+        self, checkout_id: UUID, message: str
+    ) -> AsyncIterator[StreamEvent]: ...
+    def pull_thread(
+        self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]: ...
 
 
 @runtime_checkable
