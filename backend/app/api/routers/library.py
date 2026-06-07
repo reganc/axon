@@ -5,10 +5,18 @@ from pydantic import BaseModel
 
 from ...deps import auth, library
 from ...errors import NotFoundError
-from ...ports import Checkout, NodeState, Principal, ScoredNode
+from ...ports import Checkout, Node, NodeState, Principal, ScoredNode
 from ..security import require_perm
 
 router = APIRouter(prefix="/library", tags=["library"])
+
+
+@router.get("/entry-points", response_model=list[Node])
+async def entry_points(
+    limit: int = Query(24, ge=1, le=100),
+    _: Principal = Depends(require_perm("graph:read")),
+):
+    return await library().entry_points(limit)
 
 
 @router.get("/search", response_model=list[ScoredNode])

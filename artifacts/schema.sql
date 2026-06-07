@@ -45,11 +45,13 @@ CREATE TABLE canonical_nodes (
     confidence       REAL NOT NULL DEFAULT 0.5,
     version          INT  NOT NULL DEFAULT 1,
     quality_signals  JSONB NOT NULL DEFAULT '{}', -- engagement / confusion / upvotes, accreted from interactions
+    attributes       JSONB NOT NULL DEFAULT '{}', -- Phase 5: type-specific data (person/artifact/question/…)
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_nodes_embedding ON canonical_nodes
     USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX idx_nodes_kind ON canonical_nodes (kind);  -- Phase 5: type-filtered queries
 
 -- ----------------------------------------------------------------------------
 --  EDGE — the web. Weights accrete every time a learner traverses an edge.

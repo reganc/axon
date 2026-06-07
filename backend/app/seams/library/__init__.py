@@ -16,9 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ...embeddings import Embedder
 from ...errors import NotFoundError
-from ...ports import Checkout, Coverage, NodeState, ScoredNode
+from ...ports import Checkout, Coverage, Node, NodeState, ScoredNode
 from ...tables import canonical_nodes, checkouts, node_states, spines, users
 from ..content import _NODE_COLS, _row_to_node
+
+# Cold-start home screen surfaces these anchor kinds (Phase 5 §5/§6).
+ENTRY_POINT_KINDS = ("question", "person")
 
 
 class Library:
@@ -27,6 +30,21 @@ class Library:
     ) -> None:
         self._sm = sessionmaker
         self._embed = embedder
+
+    async def entry_points(self, limit: int = 24) -> list[Node]:
+        """Curiosity anchors for cold-start: question + person nodes. These seed
+        generation (a question opens an answer-subgraph; a person anchors one)
+        rather than serving content."""
+        async with self._sm() as session:
+            rows = (
+                await session.execute(
+                    select(*_NODE_COLS)
+                    .where(canonical_nodes.c.kind.in_(ENTRY_POINT_KINDS))
+                    .order_by(canonical_nodes.c.kind, canonical_nodes.c.title)
+                    .limit(limit)
+                )
+            ).all()
+        return [_row_to_node(r) for r in rows]
 
     async def search(self, query: str, k: int = 10) -> list[ScoredNode]:
         qvec = await self._embed.embed(query)

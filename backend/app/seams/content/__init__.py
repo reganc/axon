@@ -46,6 +46,7 @@ _NODE_COLS = [
     canonical_nodes.c.source_ref,
     canonical_nodes.c.confidence,
     canonical_nodes.c.version,
+    canonical_nodes.c.attributes,
 ]
 
 

@@ -22,9 +22,25 @@ from pydantic import BaseModel, Field
 # Vocabulary
 # ---------------------------------------------------------------------------
 Role = Literal["learner", "author", "admin"]
-NodeKind = Literal["concept", "apply"]
+# Phase 5: node type is first-class. concept/apply are the originals; the rest
+# generalize the graph (a question is a generation seed, a person is a hub, …).
+NodeKind = Literal[
+    "concept", "apply", "question", "person", "artifact", "project", "skill"
+]
 EdgeType = Literal[
-    "next_in_spine", "prerequisite", "elaborates", "applies", "contrasts", "rabbit_hole"
+    "next_in_spine",
+    "prerequisite",
+    "elaborates",
+    "applies",
+    "contrasts",
+    "rabbit_hole",
+    # Phase 5 relationship types
+    "authored_by",
+    "about",
+    "answers",
+    "inspired_by",
+    "contradicts",
+    "teaches",
 ]
 Origin = Literal["authored", "ai_generated", "ai_extended"]
 Tier = Literal["fast", "reason"]
@@ -52,6 +68,7 @@ class NodeIn(BaseModel):
     locked: bool = False
     source_ref: str | None = None
     confidence: float = 0.5
+    attributes: dict = Field(default_factory=dict)  # Phase 5: type-specific data
 
 
 class Node(NodeIn):
