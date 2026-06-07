@@ -1,6 +1,7 @@
 """main.py — FastAPI entry. Mounts routers + the companion WebSocket, maps the
 phase-0 NotImplementedError stubs to HTTP 501, and pings the DB on startup
 without crashing if it's unreachable (skeleton boots standalone)."""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +15,7 @@ from . import db
 from .api.routers import auth, graph, health, ingest, library
 from .api.ws import companion as companion_ws
 from .config import get_settings
+from .errors import DomainError
 
 log = logging.getLogger("axon")
 
@@ -28,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     s = get_settings()
-    app = FastAPI(title="AXON", version="0.0.1-phase0", lifespan=lifespan)
+    app = FastAPI(title="AXON", version="0.1.0-phase1", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -40,7 +42,14 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(NotImplementedError)
     async def _not_implemented(request: Request, exc: NotImplementedError):
-        return JSONResponse(status_code=501, content={"detail": str(exc) or "not implemented in this phase"})
+        return JSONResponse(
+            status_code=501,
+            content={"detail": str(exc) or "not implemented in this phase"},
+        )
+
+    @app.exception_handler(DomainError)
+    async def _domain_error(request: Request, exc: DomainError):
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
 
     for r in (health, auth, graph, library, ingest):
         app.include_router(r.router)

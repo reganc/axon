@@ -11,6 +11,6 @@ async def health():
     return {
         "status": "ok",
         "app": get_settings().app_name,
-        "version": "0.0.1-phase0",
+        "version": "0.1.0-phase1",
         "db": await db.ping(),
     }

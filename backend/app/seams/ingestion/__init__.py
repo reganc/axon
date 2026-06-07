@@ -1,10 +1,170 @@
-"""ingestion seam — canonicalization core + seed loader (P1) + transcript miner (P3)."""
+"""ingestion seam — the canonicalize-and-persist chokepoint + the seed loader.
+
+Phase 1. `canonicalize` is the single most important routine in the system: it is
+deterministic and idempotent so re-ingesting the same idea never duplicates the
+library. Both the seed loader (P1) and live companion generation (P2) funnel
+through it. The transcript miner (`mine`) is Phase 3.
+
+Decision (similarity s = 1 - cosine_distance to the nearest neighbor):
+  - exact canonical-key match, or s >= merge_threshold  -> MERGE
+      * neighbor locked   -> never modify it; return it (attach lateral context
+        edge if a context node is supplied), action="merged"
+      * neighbor unlocked -> version += 1, origin="ai_extended", action="merged"
+  - related_threshold <= s < merge_threshold  -> CREATE + 'elaborates' edge to neighbor
+  - s < related_threshold (or empty library) -> CREATE standalone
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from uuid import UUID
+
+from ...config import Settings, get_settings
+from ...embeddings import Embedder
+from ...ports import CandidateNode, CanonResult, IngestReport, NodeIn
+from ..content import Content
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 
-class StubIngestion:
-    def __init__(self, llm=None, content=None):
-        self.llm, self.content = llm, content
+def normalize_key(text: str) -> str:
+    """Deterministic slug used as the dedup key."""
+    return _SLUG_RE.sub("-", text.strip().lower()).strip("-")
 
-    async def canonicalize(self, candidate): raise NotImplementedError("ingestion seam — Phase 1")
-    async def ingest_seed(self, path): raise NotImplementedError("ingestion seam — Phase 1")
-    async def mine(self, source_kind, path): raise NotImplementedError("ingestion seam — Phase 3")
+
+class Ingestion:
+    def __init__(
+        self,
+        content: Content,
+        embedder: Embedder,
+        settings: Settings | None = None,
+    ) -> None:
+        self._content = content
+        self._embed = embedder
+        self._s = settings or get_settings()
+
+    # -- canonicalize ---------------------------------------------------------
+
+    async def canonicalize(
+        self, candidate: CandidateNode, *, context_node: UUID | None = None
+    ) -> CanonResult:
+        key = normalize_key(candidate.title)
+        emb = await self._embed.embed(
+            f"{candidate.hook or ''}\n\n{candidate.body or ''}".strip()
+        )
+
+        exact = await self._content.get_node_by_key(key)
+        neighbor = await self._content.nearest(emb, exclude_key=key)
+        neighbor_sim = (1.0 - neighbor[1]) if neighbor else 0.0
+
+        merge_target = None
+        if exact is not None:
+            merge_target = exact
+        elif neighbor is not None and neighbor_sim >= self._s.canon_merge_threshold:
+            merge_target = neighbor[0]
+
+        if merge_target is not None:
+            if merge_target.locked:
+                # Authored anchor: augment around it, never overwrite. Attach a
+                # lateral edge only when we have a context node to attach from.
+                if context_node is not None:
+                    await self._content.add_edge(
+                        context_node,
+                        merge_target.id,
+                        "elaborates",
+                        origin="ai_generated",
+                    )
+                return CanonResult(
+                    node=merge_target, action="merged", neighbor_id=merge_target.id
+                )
+            updated = await self._content.bump_version(
+                merge_target.canonical_key, origin="ai_extended", embedding=emb
+            )
+            return CanonResult(
+                node=updated, action="merged", neighbor_id=merge_target.id
+            )
+
+        # CREATE path
+        node_in = NodeIn(
+            canonical_key=key,
+            title=candidate.title,
+            hook=candidate.hook,
+            body=candidate.body,
+            recall_prompts=candidate.recall_prompts,
+            origin=candidate.origin,
+            source_ref=candidate.source_ref,
+        )
+        created = await self._content.upsert_node(node_in, embedding=emb)
+
+        relate_id: UUID | None = None
+        if neighbor is not None and neighbor_sim >= self._s.canon_related_threshold:
+            await self._content.add_edge(
+                created.id, neighbor[0].id, "elaborates", origin="ai_generated"
+            )
+            relate_id = neighbor[0].id
+        if context_node is not None:
+            await self._content.add_edge(
+                context_node, created.id, "rabbit_hole", origin="ai_generated"
+            )
+        return CanonResult(node=created, action="created", neighbor_id=relate_id)
+
+    # -- seed loader ----------------------------------------------------------
+
+    async def ingest_seed(self, path: str) -> IngestReport:
+        """Load lecun_seed_graph.json verbatim (authored, locked) with computed
+        embeddings. Idempotent: explicit ids + ON CONFLICT DO NOTHING, and we skip
+        embedding work for nodes already present."""
+        data = json.loads(_resolve(path).read_text())
+        report = IngestReport()
+
+        for src in data.get("sources", []):
+            if await self._content.seed_source(src):
+                pass  # sources aren't counted in the report's headline numbers
+
+        nodes = data.get("nodes", [])
+        present = await self._content.existing_node_ids([UUID(n["id"]) for n in nodes])
+        for n in nodes:
+            if UUID(n["id"]) in present:
+                continue
+            emb = await self._embed.embed(
+                f"{n.get('hook') or ''}\n\n{n.get('body') or ''}".strip() or n["title"]
+            )
+            if await self._content.seed_node(n, emb):
+                report.nodes += 1
+
+        for e in data.get("edges", []):
+            if await self._content.seed_edge(e):
+                report.edges += 1
+
+        for sp in data.get("spines", []):
+            if await self._content.seed_spine(sp):
+                report.spines += 1
+
+        return report
+
+    async def mine(self, source_kind: str, path: str) -> IngestReport:
+        raise NotImplementedError("transcript miner — Phase 3")
+
+
+def _resolve(path: str) -> Path:
+    """Resolve a seed path against the cwd and the repo's artifacts dir.
+
+    Containers run from /app (backend), so 'artifacts/...' lives one level up.
+    Try the path as-given first, then a couple of sensible bases.
+    """
+    p = Path(path)
+    if p.is_file():
+        return p
+    here = Path(__file__).resolve()
+    # backend/app/seams/ingestion/__init__.py -> repo root is parents[4]
+    for base in (here.parents[4], here.parents[3].parent):
+        cand = base / path
+        if cand.is_file():
+            return cand
+    raise FileNotFoundError(f"seed file not found: {path}")
+
+
+# Back-compat alias for deps.py during the stub→real swap.
+StubIngestion = Ingestion
