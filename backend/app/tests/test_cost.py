@@ -182,7 +182,7 @@ async def test_gateway_meters_a_tagged_cloud_call():
         fake=FakeLLM(lambda _m: "OK"),
         controller=controller,
     )
-    gw._ollama = None
+    gw._fast = None
     gw._anthropic = None
     cid, uid = uuid4(), uuid4()
 

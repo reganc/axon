@@ -35,20 +35,23 @@ class Settings(BaseSettings):
     jwt_alg: str = "HS256"
     jwt_expire_min: int = 720
 
-    # inference gateway (Phase 2)
-    ollama_base_url: str = (
-        "http://host.docker.internal:11434"  # Ollama on the comet host
-    )
-    ollama_chat_model: str = "llama3.1:8b"
-    ollama_embed_model: str = "nomic-embed-text"
-    anthropic_api_key: str = ""
-    anthropic_model: str = (
-        ""  # set AXON_ANTHROPIC_MODEL to your chosen model id (reason tier)
-    )
+    # inference (Phase 2)
+    # fast/local tier -> the centralized llm-app gateway (OpenAI-compatible).
+    # Every app on this host shares it; use the stable "default" alias and NEVER
+    # hardcode a concrete local model/gguf tag. See CLAUDE.md > LLM access.
+    llm_base_url: str = "http://host.docker.internal:8030/v1"
+    llm_api_key: str = ""  # Bearer token for the gateway (set in .env)
+    llm_model: str = "default"  # gateway resolves the alias to the active model
+    # embeddings -> the same box's Ollama (the gateway has no embeddings endpoint)
+    ollama_base_url: str = "http://host.docker.internal:11434"
+    ollama_embed_model: str = "nomic-embed-text"  # 768-dim
     embed_dim: int = 768
     embed_backend: str = (
         "ollama"  # "ollama" (real, falls back) | "deterministic" (offline)
     )
+    # reason tier -> Anthropic API (off-box, opt-in via key)
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-6"
 
     # canonicalization thresholds (tune empirically once generation flows)
     canon_merge_threshold: float = 0.92

@@ -114,7 +114,9 @@ class Library:
         groups = [
             FacetGroup(dimension="type", values=vals(type_rows)),
             FacetGroup(dimension="origin", values=vals(origin_rows)),
-            FacetGroup(dimension="subject", values=vals(subject_rows, with_samples=False)),
+            FacetGroup(
+                dimension="subject", values=vals(subject_rows, with_samples=False)
+            ),
             FacetGroup(dimension="theme", values=vals(theme_rows, with_samples=False)),
         ]
         return Facets(node_total=int(total), groups=groups)

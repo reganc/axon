@@ -14,9 +14,23 @@ overview before touching anything; it is authoritative for the model.
 ## Quick reference
 
 **Stack:** FastAPI (async) + Postgres 15 (`pgvector` + TimescaleDB) + Redis
-(sessions, rate-limit, companion pub/sub) + an `LLMPort` gateway over **Ollama**
-(local, RTX 3060 — fast tier + embeddings) and the **Anthropic API** (reason
-tier) + Next.js (App Router, Phase 4). Orchestrated via docker compose.
+(sessions, rate-limit, companion pub/sub) + an `LLMPort` gateway (fast tier + the
+Anthropic API for the reason tier) + Next.js (App Router, Phase 4). Orchestrated
+via docker compose.
+
+**LLM access (host convention — do not deviate):** every app on this host shares
+one centralized LLM. The `LLMPort` routes three ways:
+- **fast / local chat** → the **llm-app gateway**, OpenAI-compatible at
+  `http://host.docker.internal:8030/v1/chat/completions`, Bearer-authed
+  (`AXON_LLM_API_KEY`), model alias **`default`** — *never hardcode a concrete
+  local model/gguf tag*; the gateway resolves `default` to the active model.
+- **embeddings** → the same box's Ollama at
+  `http://host.docker.internal:11434` (`nomic-embed-text`, 768-dim) — the gateway
+  exposes no embeddings endpoint, so this is the one direct-to-Ollama path.
+- **reason / cloud** → the **Anthropic API** (`AXON_ANTHROPIC_MODEL`,
+  `claude-sonnet-4-6`), gated by `AXON_ANTHROPIC_API_KEY`.
+All cloud calls go through the cost-control meter + budget breaker (`app/cost.py`).
+Secrets live only in `.env` (gitignored) — the repo is public.
 
 **Architecture:** modular monolith with **seams**. One backend, six seams
 (`identity`, `content`, `library`, `learning`, `companion`, `ingestion`). Seams

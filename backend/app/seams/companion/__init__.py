@@ -23,7 +23,7 @@ from ...config import Settings, get_settings
 from ...ports import CandidateNode, InteractionEvent, Node, StreamEvent
 from ..ingestion import normalize_key
 from .agents import NodeGenerator, Planner, Researcher
-from .llm import FakeLLM, LLMGateway, OllamaChat  # noqa: F401  (re-exported)
+from .llm import FakeLLM, GatewayChat, LLMGateway  # noqa: F401  (re-exported)
 
 log = logging.getLogger("axon.companion")
 
