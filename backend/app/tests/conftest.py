@@ -219,3 +219,12 @@ def make_companion(seams, plan: list[str], confidence: float = 0.8):
         content=seams.content,
         learning=seams.learning,
     )
+
+
+def make_miner(seams, handler):
+    """An Ingestion wired to real content/embedder but a scripted LLM (for mine())."""
+    from app.seams.companion.llm import LLMGateway
+    from app.seams.ingestion import Ingestion
+
+    gateway = LLMGateway.scripted(handler, seams.embedder)
+    return Ingestion(content=seams.content, embedder=seams.embedder, llm=gateway)

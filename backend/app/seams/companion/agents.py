@@ -7,35 +7,15 @@ replies are parsed leniently (code fences / surrounding prose tolerated).
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 
 from ...config import Settings, get_settings
+from ...jsonutil import parse_json
 from ...ports import CandidateNode, LLMPort, Msg
 
 log = logging.getLogger("axon.agents")
 
-_JSON_OBJ = re.compile(r"\{.*\}", re.DOTALL)
-_JSON_ARR = re.compile(r"\[.*\]", re.DOTALL)
-
-
-def parse_json(text: str) -> dict | list:
-    """Extract the first JSON object/array from an LLM reply; {} on failure."""
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    for pattern in (_JSON_OBJ, _JSON_ARR):
-        m = pattern.search(text)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except json.JSONDecodeError:
-                continue
-    log.warning("could not parse JSON from LLM reply: %.120s", text)
-    return {}
+__all__ = ["Planner", "NodeGenerator", "Researcher", "parse_json"]
 
 
 def _clamp01(x: float) -> float:

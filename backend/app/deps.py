@@ -42,7 +42,9 @@ def library() -> Library:
 
 @lru_cache
 def ingestion() -> Ingestion:
-    return Ingestion(content=content(), embedder=embedder(), settings=get_settings())
+    return Ingestion(
+        content=content(), embedder=embedder(), settings=get_settings(), llm=llm()
+    )
 
 
 @lru_cache
