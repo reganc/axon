@@ -65,6 +65,7 @@ canonical_nodes = Table(
     Column("confidence", Float, nullable=False, server_default=text("0.5")),
     Column("version", Integer, nullable=False, server_default=text("1")),
     Column("quality_signals", JSONB, nullable=False, server_default=text("'{}'")),
+    Column("attributes", JSONB, nullable=False, server_default=text("'{}'")),  # Phase 5
     Column("created_at", TIMESTAMP(timezone=True), server_default=text("now()")),
     Column("updated_at", TIMESTAMP(timezone=True), server_default=text("now()")),
 )
