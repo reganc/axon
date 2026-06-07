@@ -8,6 +8,7 @@ seams to build queries against — they do not create or own the schema.
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Float,
@@ -139,6 +140,27 @@ interaction_events = Table(
     Column("payload", JSONB, nullable=False, server_default=text("'{}'")),
 )
 
+# usage_events — the cost ledger (Phase: cost control). Every cloud LLM call is
+# metered here so budgets can be enforced and spend audited.
+usage_events = Table(
+    "usage_events",
+    metadata,
+    Column("id", BigInteger, primary_key=True, autoincrement=True),
+    Column(
+        "ts", TIMESTAMP(timezone=True), nullable=False, server_default=text("now()")
+    ),
+    Column("task", Text, nullable=False),
+    Column("role", Text, nullable=False),
+    Column("tier", Text, nullable=False),
+    Column("model", Text),
+    Column("input_tokens", Integer, nullable=False, server_default=text("0")),
+    Column("cached_input_tokens", Integer, nullable=False, server_default=text("0")),
+    Column("output_tokens", Integer, nullable=False, server_default=text("0")),
+    Column("cost_usd", Float, nullable=False, server_default=text("0")),
+    Column("checkout_id", UUID(as_uuid=True)),
+    Column("user_id", UUID(as_uuid=True)),
+)
+
 __all__ = [
     "metadata",
     "sources",
@@ -149,4 +171,5 @@ __all__ = [
     "checkouts",
     "node_states",
     "interaction_events",
+    "usage_events",
 ]

@@ -29,7 +29,7 @@ class Planner:
         self._llm = llm
         self._s = settings or get_settings()
 
-    async def plan(self, subject: str) -> list[str]:
+    async def plan(self, subject: str, *, checkout_id=None, user_id=None) -> list[str]:
         n = self._s.companion_max_steps
         msgs = [
             Msg(
@@ -48,7 +48,11 @@ class Planner:
                 ),
             ),
         ]
-        data = parse_json(await self._llm.complete(msgs, "reason"))
+        data = parse_json(
+            await self._llm.complete(
+                msgs, "reason", task="plan", checkout_id=checkout_id, user_id=user_id
+            )
+        )
         steps = data.get("steps", []) if isinstance(data, dict) else data
         titles = [str(s).strip() for s in steps if str(s).strip()]
         return titles[:n] or [subject]
@@ -60,7 +64,9 @@ class NodeGenerator:
     def __init__(self, llm: LLMPort) -> None:
         self._llm = llm
 
-    async def generate(self, title: str, subject: str) -> CandidateNode:
+    async def generate(
+        self, title: str, subject: str, *, checkout_id=None, user_id=None
+    ) -> CandidateNode:
         msgs = [
             Msg(
                 role="system",
@@ -78,7 +84,11 @@ class NodeGenerator:
                 ),
             ),
         ]
-        data = parse_json(await self._llm.complete(msgs, "fast"))
+        data = parse_json(
+            await self._llm.complete(
+                msgs, "fast", task="draft", checkout_id=checkout_id, user_id=user_id
+            )
+        )
         data = data if isinstance(data, dict) else {}
         rp = data.get("recall_prompts") or []
         return CandidateNode(
@@ -103,7 +113,9 @@ class Researcher:
         self._llm = llm
         self._s = settings or get_settings()
 
-    async def ground(self, candidate: CandidateNode) -> CandidateNode:
+    async def ground(
+        self, candidate: CandidateNode, *, checkout_id=None, user_id=None
+    ) -> CandidateNode:
         msgs = [
             Msg(
                 role="system",
@@ -121,7 +133,11 @@ class Researcher:
                 ),
             ),
         ]
-        data = parse_json(await self._llm.complete(msgs, "reason"))
+        data = parse_json(
+            await self._llm.complete(
+                msgs, "reason", task="ground", checkout_id=checkout_id, user_id=user_id
+            )
+        )
         data = data if isinstance(data, dict) else {}
         try:
             confidence = _clamp01(float(data.get("confidence", 0.5)))

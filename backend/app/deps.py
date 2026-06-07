@@ -10,6 +10,7 @@ from functools import lru_cache
 
 from . import db
 from .config import get_settings
+from .cost import CostController, DbBudgetGate, DbUsageMeter, RoutingPolicy
 from .embeddings import Embedder, build_embedder
 from .seams.companion import Companion
 from .seams.companion.llm import LLMGateway
@@ -48,8 +49,15 @@ def ingestion() -> Ingestion:
 
 
 @lru_cache
+def cost_controller() -> CostController:
+    sm = db.session_factory()
+    s = get_settings()
+    return CostController(RoutingPolicy(s), DbUsageMeter(sm), DbBudgetGate(sm, s))
+
+
+@lru_cache
 def llm() -> LLMGateway:
-    return LLMGateway(get_settings(), embedder())
+    return LLMGateway(get_settings(), embedder(), controller=cost_controller())
 
 
 @lru_cache
