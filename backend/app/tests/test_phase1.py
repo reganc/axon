@@ -6,7 +6,6 @@ The seed is loaded once per session via the `seeded` fixture.
 
 from __future__ import annotations
 
-import asyncio
 from uuid import uuid4
 
 import pytest
@@ -62,34 +61,7 @@ async def seam():
         await engine.dispose()
 
 
-async def _reset_graph() -> None:
-    """Truncate graph + overlay tables so the suite is repeatable against a
-    persistent dev DB (insert counts on first seed are then deterministic)."""
-    engine = create_async_engine(DB_URL, poolclass=NullPool)
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(
-                sa.text(
-                    "TRUNCATE sources, canonical_nodes, spines, users "
-                    "RESTART IDENTITY CASCADE"
-                )
-            )
-    finally:
-        await engine.dispose()
-
-
-@pytest.fixture(scope="session")
-def seeded(client):
-    """Reset, then load the LeCun seed once. Returns the first-load report, so its
-    headline counts are the deterministic 30/41/3."""
-    asyncio.run(_reset_graph())
-    r = client.post(
-        "/ingest/seed",
-        json={"path": "artifacts/lecun_seed_graph.json"},
-        headers=auth_header(client, AUTHOR, "author"),
-    )
-    assert r.status_code == 200, r.text
-    return r.json()
+# `seeded` (session-scoped reset + seed) lives in conftest, shared with Phase 2.
 
 
 # -- seed loading -------------------------------------------------------------
@@ -113,11 +85,18 @@ async def test_seed_is_idempotent(client, seeded):
         "merged": 0,
         "redacted": 0,
     }
-    assert await _scalar("SELECT count(*) FROM canonical_nodes") == 30
+    # the 30 authored seed nodes are unchanged (other tests may add AI nodes)
+    assert (
+        await _scalar("SELECT count(*) FROM canonical_nodes WHERE origin = 'authored'")
+        == 30
+    )
 
 
 async def test_all_nodes_have_768d_embeddings(seeded):
-    assert await _scalar("SELECT count(*) FROM canonical_nodes") == 30
+    assert (
+        await _scalar("SELECT count(*) FROM canonical_nodes WHERE origin = 'authored'")
+        == 30
+    )
     assert (
         await _scalar("SELECT count(*) FROM canonical_nodes WHERE embedding IS NULL")
         == 0

@@ -95,6 +95,7 @@ class Ingestion:
             recall_prompts=candidate.recall_prompts,
             origin=candidate.origin,
             source_ref=candidate.source_ref,
+            confidence=candidate.confidence,
         )
         created = await self._content.upsert_node(node_in, embedding=emb)
 

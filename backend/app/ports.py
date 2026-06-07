@@ -113,6 +113,7 @@ class CandidateNode(BaseModel):
     recall_prompts: list[str] = Field(default_factory=list)
     origin: Origin = "ai_generated"
     source_ref: str | None = None
+    confidence: float = 0.5  # set by the Researcher; carried into the persisted node
 
 
 class CanonResult(BaseModel):

@@ -122,6 +122,26 @@ class Library:
                 subject=co._mapping[checkouts.c.subject],
             )
 
+    async def merge_companion_memory(self, checkout_id: UUID, patch: dict) -> None:
+        """Shallow-merge into checkouts.companion_memory (the Tutor's memory of
+        this learner for this subject)."""
+        cid = UUID(str(checkout_id))
+        async with self._sm() as session, session.begin():
+            row = (
+                await session.execute(
+                    select(checkouts.c.companion_memory).where(checkouts.c.id == cid)
+                )
+            ).first()
+            if row is None:
+                return
+            memory = dict(row._mapping[checkouts.c.companion_memory] or {})
+            memory.update(patch)
+            await session.execute(
+                checkouts.update()
+                .where(checkouts.c.id == cid)
+                .values(companion_memory=memory)
+            )
+
     async def checkout_owner(self, checkout_id: UUID) -> UUID | None:
         """Owner of a checkout, for `checkout:read:self` enforcement at the router."""
         async with self._sm() as session:

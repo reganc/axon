@@ -51,6 +51,21 @@ class Settings(BaseSettings):
     canon_merge_threshold: float = 0.92
     canon_related_threshold: float = 0.80
 
+    # companion / agents (Phase 2)
+    llm_reason_fallback_to_fast: bool = (
+        True  # no Anthropic key -> route reason via Ollama
+    )
+    companion_reuse_threshold: float = (
+        0.85  # Tutor: search hit >= this -> reuse, don't generate
+    )
+    companion_confidence_floor: float = (
+        0.55  # Researcher: below -> flag, don't publish as fact
+    )
+    companion_max_steps: int = 8  # cap nodes generated per turn
+    librarian_merge_threshold: float = (
+        0.93  # background dedup of near-duplicate AI nodes
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

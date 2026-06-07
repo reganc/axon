@@ -1,0 +1,191 @@
+"""LLM gateway (LLMPort) — routes by tier and degrades gracefully.
+
+- tier="fast"   -> Ollama chat (narration, quick adaptations)
+- tier="reason" -> Anthropic API (planning, grounding); falls back to Ollama when
+  no key is configured (AXON_LLM_REASON_FALLBACK_TO_FAST).
+- embed         -> the Phase-1 embedder (Ollama nomic-embed-text, 768-d).
+
+Every chat call falls back to a deterministic `FakeLLM` if the live backend
+errors, so a turn never hard-crashes on a flaky model host. Tests inject a
+`FakeLLM` with a scripted handler for fully deterministic companion behaviour.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from collections.abc import AsyncIterator, Callable
+
+import httpx
+
+from ...config import Settings, get_settings
+from ...embeddings import Embedder, build_embedder
+from ...ports import Msg, Tier
+
+log = logging.getLogger("axon.llm")
+
+
+def _as_dicts(msgs: list[Msg]) -> list[dict]:
+    return [{"role": m.role, "content": m.content} for m in msgs]
+
+
+class OllamaChat:
+    def __init__(self, base_url: str, model: str, timeout: float = 120.0) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.timeout = timeout
+
+    async def complete(self, msgs: list[Msg]) -> str:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": _as_dicts(msgs),
+                    "stream": False,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["message"]["content"]
+
+    async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/api/chat",
+                json={"model": self.model, "messages": _as_dicts(msgs), "stream": True},
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    obj = json.loads(line)
+                    chunk = obj.get("message", {}).get("content", "")
+                    if chunk:
+                        yield chunk
+                    if obj.get("done"):
+                        break
+
+
+class AnthropicChat:
+    def __init__(self, api_key: str, model: str, max_tokens: int = 1024) -> None:
+        import anthropic
+
+        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        self._not_given = anthropic.NOT_GIVEN
+        self.model = model
+        self.max_tokens = max_tokens
+
+    def _split(self, msgs: list[Msg]):
+        system = "\n".join(m.content for m in msgs if m.role == "system")
+        rest = [
+            {"role": m.role, "content": m.content} for m in msgs if m.role != "system"
+        ]
+        return (system or self._not_given), rest
+
+    async def complete(self, msgs: list[Msg]) -> str:
+        system, rest = self._split(msgs)
+        resp = await self._client.messages.create(
+            model=self.model, max_tokens=self.max_tokens, system=system, messages=rest
+        )
+        return "".join(b.text for b in resp.content if b.type == "text")
+
+    async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
+        system, rest = self._split(msgs)
+        async with self._client.messages.stream(
+            model=self.model, max_tokens=self.max_tokens, system=system, messages=rest
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+
+
+class FakeLLM:
+    """Deterministic backend. `handler(msgs) -> str` lets tests script replies by
+    inspecting the prompt (agents tag prompts with `TASK: <name>`)."""
+
+    def __init__(self, handler: Callable[[list[Msg]], str] | None = None) -> None:
+        self._handler = handler or (lambda _msgs: "OK")
+
+    async def complete(self, msgs: list[Msg]) -> str:
+        return self._handler(msgs)
+
+    async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
+        for word in self._handler(msgs).split(" "):
+            yield word + " "
+
+
+class LLMGateway:
+    """The LLMPort the companion depends on."""
+
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        embedder: Embedder | None = None,
+        *,
+        ollama: OllamaChat | None = None,
+        anthropic_chat: AnthropicChat | None = None,
+        fake: FakeLLM | None = None,
+    ) -> None:
+        s = settings or get_settings()
+        self._s = s
+        self._embedder = embedder or build_embedder(s)
+        self._fake = fake or FakeLLM()
+        self._ollama = ollama or (
+            OllamaChat(s.ollama_base_url, s.ollama_chat_model)
+            if s.ollama_base_url
+            else None
+        )
+        if anthropic_chat is not None:
+            self._anthropic = anthropic_chat
+        elif s.anthropic_api_key and s.anthropic_model:
+            self._anthropic = AnthropicChat(s.anthropic_api_key, s.anthropic_model)
+        else:
+            self._anthropic = None
+
+    @classmethod
+    def scripted(
+        cls, handler, embedder: Embedder, settings: Settings | None = None
+    ) -> "LLMGateway":
+        """A gateway whose chat is a scripted FakeLLM (no live model) but whose
+        `embed` uses the given real embedder. For deterministic companion tests."""
+        gw = cls(settings, embedder, fake=FakeLLM(handler))
+        gw._ollama = None
+        gw._anthropic = None
+        return gw
+
+    def _backend(self, tier: Tier):
+        if tier == "reason":
+            if self._anthropic is not None:
+                return self._anthropic
+            if not self._s.llm_reason_fallback_to_fast:
+                return self._fake
+        if self._ollama is not None:
+            return self._ollama
+        return self._fake
+
+    async def complete(self, msgs: list[Msg], tier: Tier) -> str:
+        backend = self._backend(tier)
+        try:
+            return await backend.complete(msgs)
+        except Exception as exc:  # noqa: BLE001 - degrade, never crash a turn
+            log.warning(
+                "llm complete failed on %s (%s); using fake",
+                type(backend).__name__,
+                exc,
+            )
+            return await self._fake.complete(msgs)
+
+    async def stream(self, msgs: list[Msg], tier: Tier) -> AsyncIterator[str]:
+        backend = self._backend(tier)
+        try:
+            async for chunk in backend.stream(msgs):
+                yield chunk
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "llm stream failed on %s (%s); using fake", type(backend).__name__, exc
+            )
+            async for chunk in self._fake.stream(msgs):
+                yield chunk
+
+    async def embed(self, text: str) -> list[float]:
+        return await self._embedder.embed(text)
