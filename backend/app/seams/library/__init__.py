@@ -46,18 +46,19 @@ class Library:
             ).all()
         return [_row_to_node(r) for r in rows]
 
-    async def search(self, query: str, k: int = 10) -> list[ScoredNode]:
+    async def search(
+        self, query: str, k: int = 10, kinds: list[str] | None = None
+    ) -> list[ScoredNode]:
         qvec = await self._embed.embed(query)
         distance = canonical_nodes.c.embedding.cosine_distance(qvec).label("distance")
+        stmt = select(*_NODE_COLS, distance).where(
+            canonical_nodes.c.embedding.is_not(None)
+        )
+        if kinds:
+            stmt = stmt.where(canonical_nodes.c.kind.in_(kinds))  # Phase 5: type-aware
+        stmt = stmt.order_by(distance).limit(k)
         async with self._sm() as session:
-            rows = (
-                await session.execute(
-                    select(*_NODE_COLS, distance)
-                    .where(canonical_nodes.c.embedding.is_not(None))
-                    .order_by(distance)
-                    .limit(k)
-                )
-            ).all()
+            rows = (await session.execute(stmt)).all()
         # cosine distance in [0, 2]; similarity score = 1 - distance, clamped to [0, 1]
         return [
             ScoredNode(

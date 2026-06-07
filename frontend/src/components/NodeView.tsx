@@ -3,8 +3,15 @@ import { useEffect, useState } from "react";
 import { useGraphStore } from "@/store/graphStore";
 
 /** Opens the selected node: the curiosity hook first, then (on reveal) the body,
- *  then a "pull this thread" affordance that spawns a rabbit hole. */
-export function NodeView({ onPullThread }: { onPullThread: (nodeId: string) => void }) {
+ *  then a "pull this thread" affordance — or, for a question node, an "explore"
+ *  affordance that asks the companion to build the answer-subgraph. */
+export function NodeView({
+  onPullThread,
+  onExploreQuestion,
+}: {
+  onPullThread: (nodeId: string) => void;
+  onExploreQuestion: (nodeId: string) => void;
+}) {
   const selectedId = useGraphStore((s) => s.selectedId);
   const node = useGraphStore((s) => (s.selectedId ? s.nodes[s.selectedId] : null));
   const [revealed, setRevealed] = useState(false);
@@ -30,7 +37,12 @@ export function NodeView({ onPullThread }: { onPullThread: (nodeId: string) => v
 
       {node.hook && <p className="text-fg">{node.hook}</p>}
 
-      {!revealed ? (
+      {node.kind === "question" ? (
+        // a question has no answer body — opening it seeds generation
+        <p className="text-sm italic text-muted">
+          An open question. Explore it and the companion builds the concepts that answer it.
+        </p>
+      ) : !revealed ? (
         <button
           type="button"
           onClick={() => setRevealed(true)}
@@ -42,14 +54,25 @@ export function NodeView({ onPullThread }: { onPullThread: (nodeId: string) => v
         <p className="whitespace-pre-wrap text-sm text-muted">{node.body ?? "—"}</p>
       )}
 
-      <button
-        type="button"
-        onClick={() => onPullThread(node.id)}
-        disabled={node.optimistic}
-        className="mt-auto rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
-      >
-        Pull this thread →
-      </button>
+      {node.kind === "question" ? (
+        <button
+          type="button"
+          onClick={() => onExploreQuestion(node.id)}
+          disabled={node.optimistic}
+          className="mt-auto rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
+        >
+          Explore this question →
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onPullThread(node.id)}
+          disabled={node.optimistic}
+          className="mt-auto rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
+        >
+          Pull this thread →
+        </button>
+      )}
     </div>
   );
 }

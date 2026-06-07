@@ -2,6 +2,7 @@
 import { getToken } from "./auth";
 import type {
   Checkout,
+  NodeDTO,
   NodeState,
   Role,
   SpineSummary,
@@ -53,6 +54,8 @@ export async function issueToken(userId: string, role: Role): Promise<string> {
 }
 
 export const listSpines = () => request<SpineSummary[]>("/graph/spines");
+
+export const listEntryPoints = () => request<NodeDTO[]>("/library/entry-points");
 
 export const getSpine = (spineId: string) =>
   request<SpineWithNodes>(`/graph/spines/${spineId}`);

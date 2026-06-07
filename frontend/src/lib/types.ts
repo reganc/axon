@@ -72,4 +72,5 @@ export type ClientMessage =
   | { type: "interrupt"; text: string }
   | { type: "answer"; text: string }
   | { type: "pull_thread"; node_id: string }
+  | { type: "explore_question"; node_id: string }
   | { type: "close" };

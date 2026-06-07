@@ -50,6 +50,7 @@ export function GraphCanvas() {
           position: pos[id] ?? { x: 0, y: 0 },
           data: {
             title: n.title,
+            kind: n.kind,
             onSpine: n.onSpine,
             optimistic: n.optimistic,
             flagged: n.flagged,

@@ -1,0 +1,264 @@
+{
+  "sources": [
+    {
+      "id": "e5ad917a-3deb-54cd-a924-c09655594c44",
+      "kind": "anchor_set",
+      "title": "AXON cold-start curiosity anchors",
+      "uri": "anchors/",
+      "ingested_at": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "6a13adc2-b626-5952-ae16-0ec427d854d0",
+      "canonical_key": "anchor-what-is-intelligence",
+      "title": "What is intelligence?",
+      "kind": "question",
+      "hook": "Everyone uses the word; nobody agrees what it measures. Is it one thing or many?",
+      "body": null,
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#question",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "status": "open",
+        "difficulty": "hard"
+      }
+    },
+    {
+      "id": "2c10757f-35a7-59f0-8eb3-015ec3a27ffc",
+      "canonical_key": "anchor-how-does-a-brain-learn",
+      "title": "How does a brain learn?",
+      "kind": "question",
+      "hook": "Three pounds of tissue rewires itself from experience. What's the rule it follows?",
+      "body": null,
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#question",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "status": "open",
+        "difficulty": "hard"
+      }
+    },
+    {
+      "id": "0a5eb004-5a14-5a4a-8011-5c7767c4047a",
+      "canonical_key": "anchor-what-is-consciousness",
+      "title": "What is consciousness?",
+      "kind": "question",
+      "hook": "Why is there something it is like to be you — and could a machine ever have it?",
+      "body": null,
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#question",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "status": "open",
+        "difficulty": "hard"
+      }
+    },
+    {
+      "id": "45a4d01f-0121-576e-8b63-7017f60dc8e3",
+      "canonical_key": "anchor-can-a-machine-understand",
+      "title": "Can a machine truly understand?",
+      "kind": "question",
+      "hook": "A model can finish your sentence flawlessly. Does it grasp the meaning, or just the statistics?",
+      "body": null,
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#question",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "status": "open",
+        "difficulty": "core"
+      }
+    },
+    {
+      "id": "693c34aa-52de-520b-b841-4037246f5b51",
+      "canonical_key": "anchor-why-is-math-so-effective",
+      "title": "Why is mathematics so effective?",
+      "kind": "question",
+      "hook": "Marks on paper predict the orbit of planets and the mass of particles. Why should that work at all?",
+      "body": null,
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#question",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "status": "open",
+        "difficulty": "hard"
+      }
+    },
+    {
+      "id": "642633d4-788f-5cfb-b163-5a7620210875",
+      "canonical_key": "anchor-what-makes-a-system-alive",
+      "title": "What makes a system alive?",
+      "kind": "question",
+      "hook": "Where exactly is the line between chemistry and life — and is it a line at all?",
+      "body": null,
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#question",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "status": "open",
+        "difficulty": "core"
+      }
+    },
+    {
+      "id": "c3fe0057-f32a-52b7-a417-170a6f846031",
+      "canonical_key": "anchor-person-alan-turing",
+      "title": "Alan Turing",
+      "kind": "person",
+      "hook": "The mind behind Turing's ideas — pull a thread to follow them.",
+      "body": "Founder of theoretical computer science; defined computation with the Turing machine and posed the question of machine intelligence with the imitation game.",
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#person",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "born": 1912,
+        "died": 1954,
+        "country": "United Kingdom",
+        "notable_for": [
+          "Turing machine",
+          "Turing test",
+          "computability"
+        ]
+      }
+    },
+    {
+      "id": "3f688c64-3f31-5dc7-bb85-695447af42d4",
+      "canonical_key": "anchor-person-claude-shannon",
+      "title": "Claude Shannon",
+      "kind": "person",
+      "hook": "The mind behind Shannon's ideas — pull a thread to follow them.",
+      "body": "Founder of information theory; showed that information could be measured in bits and communicated reliably over noisy channels.",
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#person",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "born": 1916,
+        "died": 2001,
+        "country": "United States",
+        "notable_for": [
+          "information theory",
+          "the bit",
+          "channel capacity"
+        ]
+      }
+    },
+    {
+      "id": "c7101d3d-16f1-54e3-b367-47913afa0da6",
+      "canonical_key": "anchor-person-geoffrey-hinton",
+      "title": "Geoffrey Hinton",
+      "kind": "person",
+      "hook": "The mind behind Hinton's ideas — pull a thread to follow them.",
+      "body": "A central figure in deep learning; advanced backpropagation and representation learning and shared the 2018 Turing Award with LeCun and Bengio.",
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "anchors#person",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "born": 1947,
+        "country": "United Kingdom / Canada",
+        "notable_for": [
+          "backpropagation",
+          "deep learning",
+          "2018 Turing Award"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "91f76632-3bb7-5623-a198-ea36c1f1f09e",
+      "src_node": "c3fe0057-f32a-52b7-a417-170a6f846031",
+      "dst_node": "45a4d01f-0121-576e-8b63-7017f60dc8e3",
+      "type": "about",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "3a818eac-f966-591d-b7ae-a5b9093820d2",
+      "src_node": "c7101d3d-16f1-54e3-b367-47913afa0da6",
+      "dst_node": "2c10757f-35a7-59f0-8eb3-015ec3a27ffc",
+      "type": "about",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "f8243fd3-c55c-5ba0-8320-f39c3bf347a9",
+      "src_node": "3f688c64-3f31-5dc7-bb85-695447af42d4",
+      "dst_node": "693c34aa-52de-520b-b841-4037246f5b51",
+      "type": "about",
+      "weight": 1.0,
+      "origin": "authored"
+    }
+  ],
+  "spines": []
+}

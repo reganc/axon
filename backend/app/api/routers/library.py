@@ -23,9 +23,13 @@ async def entry_points(
 async def search(
     q: str = Query(..., min_length=1),
     k: int = Query(10, ge=1, le=100),
+    kinds: str | None = Query(
+        None, description="comma-separated node kinds to filter by"
+    ),
     _: Principal = Depends(require_perm("graph:read")),
 ):
-    return await library().search(q, k)
+    kind_list = [s.strip() for s in kinds.split(",") if s.strip()] if kinds else None
+    return await library().search(q, k, kind_list)
 
 
 class CheckoutReq(BaseModel):
