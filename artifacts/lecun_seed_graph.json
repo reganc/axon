@@ -30,7 +30,8 @@
       "source_ref": "lecun/course-1#lesson-1.1",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "45f10d9b-d786-5687-a75d-2bd1b67be8b3",
@@ -53,7 +54,8 @@
       "source_ref": "lecun/course-1#lesson-1.1",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "ca5d83d4-73c4-535d-b064-2f13906c3633",
@@ -76,7 +78,8 @@
       "source_ref": "lecun/course-1#lesson-1.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "2c42d4fe-e646-588b-ab81-65826dd36c2f",
@@ -99,7 +102,8 @@
       "source_ref": "lecun/course-1#lesson-1.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "b4db0225-b311-584b-a180-f78074102736",
@@ -122,7 +126,8 @@
       "source_ref": "lecun/course-1#lesson-1.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "d77f896e-a4cd-5d4e-903e-0d024f3dbbff",
@@ -145,7 +150,8 @@
       "source_ref": "lecun/course-1#lesson-1.3",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "b13d991a-63fc-5f74-a184-64553e4217c0",
@@ -168,7 +174,8 @@
       "source_ref": "lecun/course-1#lesson-1.3",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "9ce545f4-84e0-52db-89a7-eba7798e8cdc",
@@ -191,7 +198,8 @@
       "source_ref": "lecun/course-1#lesson-1.4",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "4f859f1b-ccf7-58fb-88d0-010beaf0895a",
@@ -214,7 +222,8 @@
       "source_ref": "lecun/course-1#lesson-1.4",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "79f6fa9b-a3cb-5a16-9224-4251ec93048a",
@@ -237,7 +246,8 @@
       "source_ref": "lecun/course-1#lesson-1.5",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "38d25df7-c593-5176-ae86-28af3feed9eb",
@@ -260,7 +270,8 @@
       "source_ref": "lecun/course-1#lesson-1.5",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "6e81b7a5-7605-597a-93c9-00b9c99d86bf",
@@ -281,7 +292,8 @@
       "source_ref": "lecun/course-1#project",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "a8425814-19cb-5a4c-8c7a-6f3f2653653b",
@@ -304,7 +316,8 @@
       "source_ref": "lecun/course-2#lesson-2.1",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "67cf74e7-6864-527e-a23b-fd3505184632",
@@ -327,7 +340,8 @@
       "source_ref": "lecun/course-2#lesson-2.1",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "87251e29-9905-529d-be37-8e916d2a0f74",
@@ -350,7 +364,8 @@
       "source_ref": "lecun/course-2#lesson-2.1",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
@@ -373,7 +388,8 @@
       "source_ref": "lecun/course-2#lesson-2.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "595997e8-a2d5-5646-ae50-bd09f2d01cf1",
@@ -396,7 +412,8 @@
       "source_ref": "lecun/course-2#lesson-2.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "b1358792-3745-57cd-a2d8-024e3ed723aa",
@@ -419,7 +436,8 @@
       "source_ref": "lecun/course-2#lesson-2.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "f8451e41-86b4-545a-8b0d-8c18f4245deb",
@@ -442,7 +460,8 @@
       "source_ref": "lecun/course-2#lesson-2.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "ffb09263-f238-5808-b7e3-2f1c0c8c633e",
@@ -465,7 +484,8 @@
       "source_ref": "lecun/course-2#lesson-2.3",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
@@ -487,7 +507,8 @@
       "source_ref": "lecun/course-2#lesson-2.4",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "835f9404-8eee-54a6-a8a9-c02213a2afb8",
@@ -510,7 +531,8 @@
       "source_ref": "lecun/course-2#lesson-2.5",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "35a923dc-932d-5233-91a9-633fa237e0c8",
@@ -533,7 +555,8 @@
       "source_ref": "lecun/course-3#lesson-3.1",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "2be000ec-1aaa-5b90-b080-68d765b3f94d",
@@ -556,7 +579,8 @@
       "source_ref": "lecun/course-3#lesson-3.2",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "79aeb32e-4219-5d66-81d5-ac123a3a561b",
@@ -579,7 +603,8 @@
       "source_ref": "lecun/course-3#lesson-3.3",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
@@ -602,7 +627,8 @@
       "source_ref": "lecun/course-3#lesson-3.4",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "c225444a-1c5a-5c9b-9d8d-5255daec8546",
@@ -625,7 +651,8 @@
       "source_ref": "lecun/course-3#lesson-3.4",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "76c84cfa-1c4e-5176-820d-45123ef23741",
@@ -648,7 +675,8 @@
       "source_ref": "lecun/course-3#lesson-3.5",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "070686be-ac37-501c-a582-f62d414264fa",
@@ -671,7 +699,8 @@
       "source_ref": "lecun/course-3#lesson-3.6",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
     },
     {
       "id": "741a62a6-479a-5cbf-8b12-06de0d6cbd40",
@@ -692,7 +721,47 @@
       "source_ref": "lecun/course-3#project",
       "confidence": 1.0,
       "version": 1,
-      "quality_signals": {}
+      "quality_signals": {},
+      "attributes": {}
+    },
+    {
+      "id": "9bb2b897-3230-5226-976a-a7f9e0986a8b",
+      "canonical_key": "person-yann-lecun",
+      "title": "Yann LeCun",
+      "kind": "person",
+      "hook": "The man who bet his career on machines that learn — and is now betting it again, against the grain, on world models.",
+      "body": "Yann LeCun is a French-American computer scientist, a pioneer of convolutional networks and gradient-based learning, Chief AI Scientist at Meta (2013–2025), NYU professor, and co-recipient of the 2018 Turing Award. His career is a single long wager that learning from data — not hand-coded rules — is the road to machine intelligence.",
+      "apply_prompt": null,
+      "recall_prompts": [],
+      "mastery_criteria": [],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/person",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {},
+      "attributes": {
+        "born": 1960,
+        "country": "France",
+        "affiliations": [
+          "Bell Labs",
+          "NYU",
+          "Meta",
+          "AMI Labs"
+        ],
+        "notable_for": [
+          "convolutional networks",
+          "backpropagation in practice",
+          "energy-based models",
+          "JEPA / world models"
+        ],
+        "awards": [
+          "2018 Turing Award",
+          "Legion of Honour"
+        ]
+      }
     }
   ],
   "edges": [
@@ -1021,6 +1090,30 @@
       "src_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
       "dst_node": "35a923dc-932d-5233-91a9-633fa237e0c8",
       "type": "contrasts",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "b9d18ac5-a197-53a1-bb51-80ec83d20733",
+      "src_node": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "dst_node": "9bb2b897-3230-5226-976a-a7f9e0986a8b",
+      "type": "about",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "b4e52057-bbd0-546c-bf89-451e49c6572f",
+      "src_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "dst_node": "9bb2b897-3230-5226-976a-a7f9e0986a8b",
+      "type": "about",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "1719079d-6da6-56f1-86e4-8af696f4f8d7",
+      "src_node": "45f10d9b-d786-5687-a75d-2bd1b67be8b3",
+      "dst_node": "9bb2b897-3230-5226-976a-a7f9e0986a8b",
+      "type": "about",
       "weight": 1.0,
       "origin": "authored"
     }

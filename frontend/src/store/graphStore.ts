@@ -4,6 +4,7 @@ import type { NodeDTO, StreamEvent } from "@/lib/types";
 export interface GNode {
   id: string;
   title: string;
+  kind?: string;
   hook?: string | null;
   body?: string | null;
   origin?: string;
@@ -72,6 +73,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         next[n.id] = {
           id: n.id,
           title: n.title,
+          kind: n.kind,
           hook: n.hook,
           body: n.body,
           origin: n.origin,
@@ -97,6 +99,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         nodes[id] = {
           id,
           title: ev.data.node.title ?? "…",
+          kind: ev.data.node.kind,
           hook: ev.data.node.hook,
           body: ev.data.node.body,
           origin: ev.data.node.origin,

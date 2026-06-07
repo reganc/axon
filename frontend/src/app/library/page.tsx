@@ -3,13 +3,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { createCheckout, listSpines, ApiError } from "@/lib/api";
+import { createCheckout, listEntryPoints, listSpines, ApiError } from "@/lib/api";
 import { clearSession } from "@/lib/auth";
-import type { SpineSummary } from "@/lib/types";
+import type { NodeDTO, SpineSummary } from "@/lib/types";
 
 function LibraryInner() {
   const router = useRouter();
   const [spines, setSpines] = useState<SpineSummary[] | null>(null);
+  const [anchors, setAnchors] = useState<NodeDTO[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -17,6 +18,11 @@ function LibraryInner() {
     listSpines()
       .then(setSpines)
       .catch((e) => setError(e instanceof ApiError ? e.message : "failed to load spines"));
+    listEntryPoints()
+      .then(setAnchors)
+      .catch(() => {
+        /* anchors are optional cold-start sugar; ignore if unavailable */
+      });
   }, []);
 
   const checkout = async (spine: SpineSummary) => {
@@ -24,6 +30,17 @@ function LibraryInner() {
     try {
       const co = await createCheckout(spine.id, spine.subject);
       sessionStorage.setItem(`axon.spine.${co.id}`, spine.id);
+      router.push(`/learn/${co.id}`);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "checkout failed");
+      setBusyId(null);
+    }
+  };
+
+  const startFromAnchor = async (anchor: NodeDTO) => {
+    setBusyId(anchor.id);
+    try {
+      const co = await createCheckout(null, anchor.title); // free-roam, seeded by the anchor
       router.push(`/learn/${co.id}`);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "checkout failed");
@@ -57,6 +74,31 @@ function LibraryInner() {
 
       {error && <p className="mb-4 text-sm text-warn">{error}</p>}
       {!spines && <p className="text-sm text-muted">Loading spines…</p>}
+
+      {anchors.length > 0 && (
+        <section className="mb-10" aria-label="Curiosity anchors">
+          <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">
+            Start from a curiosity anchor
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {anchors.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => startFromAnchor(a)}
+                disabled={busyId === a.id}
+                className="rounded-lg border border-border bg-surface p-4 text-left hover:border-accent disabled:opacity-50"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wide text-accent">{a.kind}</span>
+                  <span className="font-medium text-fg">{a.title}</span>
+                </div>
+                {a.hook && <p className="mt-1 text-sm text-muted">{a.hook}</p>}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {subjects.map((subject) => (
         <section key={subject} className="mb-8">

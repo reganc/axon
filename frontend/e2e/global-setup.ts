@@ -14,12 +14,14 @@ export default async function globalSetup() {
     throw new Error(`E2E setup: /auth/token failed (${tokenRes.status()}) — is the backend on ${API}?`);
   }
   const { token } = await tokenRes.json();
-  const seedRes = await ctx.post(`${API}/ingest/seed`, {
-    data: { path: "artifacts/lecun_seed_graph.json" },
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!seedRes.ok()) {
-    throw new Error(`E2E setup: /ingest/seed failed (${seedRes.status()})`);
+  for (const path of ["artifacts/lecun_seed_graph.json", "artifacts/anchor_seed.json"]) {
+    const seedRes = await ctx.post(`${API}/ingest/seed`, {
+      data: { path },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!seedRes.ok()) {
+      throw new Error(`E2E setup: /ingest/seed ${path} failed (${seedRes.status()})`);
+    }
   }
   await ctx.dispose();
 }

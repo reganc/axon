@@ -73,6 +73,8 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
                 await inbox.put(msg)
             elif kind == "pull_thread":
                 await stream(companion().pull_thread(cid, msg.get("node_id")))
+            elif kind == "explore_question":
+                await stream(companion().explore_question(cid, msg.get("node_id")))
             elif kind == "close":
                 break
             else:

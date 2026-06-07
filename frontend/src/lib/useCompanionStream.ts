@@ -82,6 +82,13 @@ export function useCompanionStream(checkoutId: string) {
     },
     [send, setBusy],
   );
+  const exploreQuestion = useCallback(
+    (nodeId: string) => {
+      setBusy(true);
+      send({ type: "explore_question", node_id: nodeId });
+    },
+    [send, setBusy],
+  );
 
-  return { connected, sendSubject, answer, interrupt, pullThread };
+  return { connected, sendSubject, answer, interrupt, pullThread, exploreQuestion };
 }

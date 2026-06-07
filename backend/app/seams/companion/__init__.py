@@ -37,6 +37,7 @@ def _node_payload(node: Node) -> dict:
         "id": str(node.id),
         "canonical_key": node.canonical_key,
         "title": node.title,
+        "kind": node.kind,
         "hook": node.hook,
         "body": node.body,
         "origin": node.origin,
@@ -46,7 +47,13 @@ def _node_payload(node: Node) -> dict:
 
 
 def _candidate_payload(c: CandidateNode) -> dict:
-    return {"title": c.title, "hook": c.hook, "body": c.body, "origin": c.origin}
+    return {
+        "title": c.title,
+        "kind": "concept",
+        "hook": c.hook,
+        "body": c.body,
+        "origin": c.origin,
+    }
 
 
 class Companion:
@@ -165,6 +172,47 @@ class Companion:
             )
         )
         yield _ev("done", nodes=1)
+
+    async def explore_question(
+        self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]:
+        """A `question` node is a generation seed (Phase 5 §5): build the concepts
+        that answer it rather than serving a body. Each generated concept is linked
+        back to the question with an `answers` edge."""
+        cid, qid = UUID(str(checkout_id)), UUID(str(node_id))
+        question = (await self._content.get_subgraph([qid], depth=0)).nodes[0]
+        yield _ev(
+            "status",
+            phase="answering",
+            detail=f"Building an answer to: {question.title}",
+        )
+
+        plan = await self._planner.plan(question.hook or question.title)
+        produced = 0
+        for title in plan[: self._s.companion_max_steps]:
+            node, events = await self._materialize(cid, title, question.title)
+            for e in events:
+                yield e
+            if node.id != qid:
+                edge = await self._content.add_edge(
+                    node.id, qid, "answers", origin="ai_generated"
+                )
+                yield _ev(
+                    "edge.create",
+                    edge={
+                        "id": str(edge.id),
+                        "src_node": str(edge.src_node),
+                        "dst_node": str(edge.dst_node),
+                        "type": edge.type,
+                    },
+                )
+            await self._learning.record(
+                InteractionEvent(
+                    checkout_id=cid, node_id=node.id, event_type="viewed", payload={}
+                )
+            )
+            produced += 1
+        yield _ev("done", nodes=produced)
 
     # -- per-step: reuse or generate -----------------------------------------
 

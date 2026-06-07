@@ -68,7 +68,9 @@ async def seam():
 
 
 def test_seed_counts(seeded):
-    assert seeded == {"nodes": 30, "edges": 41, "spines": 3, "merged": 0, "redacted": 0}
+    # 31 nodes / 44 edges since Phase 5 re-anchored the pilot on person-yann-lecun
+    # (+1 person node, +3 'about' edges); 3 spines unchanged.
+    assert seeded == {"nodes": 31, "edges": 44, "spines": 3, "merged": 0, "redacted": 0}
 
 
 async def test_seed_is_idempotent(client, seeded):
@@ -85,17 +87,22 @@ async def test_seed_is_idempotent(client, seeded):
         "merged": 0,
         "redacted": 0,
     }
-    # the 30 authored seed nodes are unchanged (other tests may add AI nodes)
+    # the LeCun seed nodes are unchanged (count by source so anchors/AI nodes
+    # added by other tests don't interfere): 30 concepts + 1 person = 31
     assert (
-        await _scalar("SELECT count(*) FROM canonical_nodes WHERE origin = 'authored'")
-        == 30
+        await _scalar(
+            "SELECT count(*) FROM canonical_nodes WHERE source_ref LIKE 'lecun/%'"
+        )
+        == 31
     )
 
 
 async def test_all_nodes_have_768d_embeddings(seeded):
     assert (
-        await _scalar("SELECT count(*) FROM canonical_nodes WHERE origin = 'authored'")
-        == 30
+        await _scalar(
+            "SELECT count(*) FROM canonical_nodes WHERE source_ref LIKE 'lecun/%'"
+        )
+        == 31
     )
     assert (
         await _scalar("SELECT count(*) FROM canonical_nodes WHERE embedding IS NULL")

@@ -31,7 +31,7 @@ SOURCE = {
 # --- nodes -------------------------------------------------------------------
 # (key, title, kind, hook, body, recall[], criteria[], depth, source_ref, apply_prompt)
 N = []
-def node(key, title, hook, body, recall, criteria, depth, ref, kind="concept", apply=None):
+def node(key, title, hook, body, recall, criteria, depth, ref, kind="concept", apply=None, attributes=None):
     N.append({
         "id": nid(key), "canonical_key": key, "title": title, "kind": kind,
         "hook": hook, "body": body, "apply_prompt": apply,
@@ -39,6 +39,7 @@ def node(key, title, hook, body, recall, criteria, depth, ref, kind="concept", a
         "depth_level": depth, "embedding": None,
         "origin": "authored", "locked": True, "source_ref": ref,
         "confidence": 1.0, "version": 1, "quality_signals": {},
+        "attributes": attributes or {},
     })
 
 # ===== Course 1 — The Conviction ============================================
@@ -219,6 +220,20 @@ node("apply-llms-vs-world-models-debate", "Defend a position: LLMs vs. world mod
             "critique, self-supervised learning, and JEPA as evidence; steelman the opposing view before "
             "rebutting it. Assessed on reasoning, not the side you take."))
 
+# ===== Person anchor (Phase 5 §7) — the hub the three spines hang off ========
+node("person-yann-lecun", "Yann LeCun",
+     "The man who bet his career on machines that learn — and is now betting it again, against the grain, on world models.",
+     "Yann LeCun is a French-American computer scientist, a pioneer of convolutional networks and "
+     "gradient-based learning, Chief AI Scientist at Meta (2013–2025), NYU professor, and co-recipient of "
+     "the 2018 Turing Award. His career is a single long wager that learning from data — not hand-coded "
+     "rules — is the road to machine intelligence.",
+     [], [], "intro", "lecun/person", kind="person",
+     attributes={"born": 1960, "country": "France",
+                 "affiliations": ["Bell Labs", "NYU", "Meta", "AMI Labs"],
+                 "notable_for": ["convolutional networks", "backpropagation in practice",
+                                 "energy-based models", "JEPA / world models"],
+                 "awards": ["2018 Turing Award", "Legion of Honour"]})
+
 # --- edges -------------------------------------------------------------------
 E = []
 def edge(src, dst, typ, origin="authored", w=1.0):
@@ -258,6 +273,10 @@ edge("lecuns-connectionist-bet", "backpropagation", "rabbit_hole")     # 1.1 tea
 edge("lecun-as-public-voice", "limits-of-autoregression", "rabbit_hole") # 1.5 sets up C3
 # contrast that powers the debate
 edge("jepa", "limits-of-autoregression", "contrasts")
+# Phase 5 §7: the three spine signature nodes are ABOUT the person — the pilot
+# now reads as one Person-anchored subgraph hanging off person-yann-lecun.
+for sig in ("the-convolutional-network", "jepa", "lecuns-connectionist-bet"):
+    edge(sig, "person-yann-lecun", "about")
 
 # --- spines ------------------------------------------------------------------
 def spine(key, title, subject, seq, desc):

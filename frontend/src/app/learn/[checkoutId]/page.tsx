@@ -15,7 +15,7 @@ import { useTranscriptStore } from "@/store/transcriptStore";
 function LearnInner({ checkoutId }: { checkoutId: string }) {
   const initGraph = useGraphStore((s) => s.init);
   const initTranscript = useTranscriptStore((s) => s.init);
-  const { connected, sendSubject, answer, interrupt, pullThread } =
+  const { connected, sendSubject, answer, interrupt, pullThread, exploreQuestion } =
     useCompanionStream(checkoutId);
 
   useEffect(() => {
@@ -52,7 +52,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
         </div>
         <aside className="flex w-[380px] flex-col border-l border-border">
           <div className="h-1/2 min-h-0 overflow-hidden border-b border-border bg-surface">
-            <NodeView onPullThread={pullThread} />
+            <NodeView onPullThread={pullThread} onExploreQuestion={exploreQuestion} />
           </div>
           <div className="h-1/2 min-h-0">
             <CompanionPanel
