@@ -183,6 +183,13 @@ async def test_explore_question_builds_answer_subgraph(seeded, seams):
     assert len(answers) >= 1
 
 
+async def test_list_nodes_filters_by_kind(seeded, seams):
+    persons = await seams.content.list_nodes(kinds=["person"], limit=50)
+    assert persons and all(n.kind == "person" for n in persons)
+    capped = await seams.content.list_nodes(limit=5)
+    assert len(capped) <= 5
+
+
 async def test_locked_invariant_still_holds_for_polymorphic_nodes(seeded, seams):
     # locking applies regardless of kind — a locked person node can't be overwritten
     await seams.content.upsert_node(

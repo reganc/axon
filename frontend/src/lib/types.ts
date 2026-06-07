@@ -37,6 +37,7 @@ export interface NodeDTO {
   origin: string;
   confidence: number;
   locked: boolean;
+  attributes?: Record<string, unknown>;
 }
 
 export interface SpineWithNodes {

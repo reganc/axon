@@ -222,6 +222,18 @@ class Content:
             ).first()
         return _row_to_node(row) if row else None
 
+    async def list_nodes(
+        self, kinds: list[str] | None = None, limit: int = 100
+    ) -> list[Node]:
+        """List nodes, optionally filtered by kind — for facet drill-down / browse."""
+        stmt = select(*_NODE_COLS)
+        if kinds:
+            stmt = stmt.where(canonical_nodes.c.kind.in_(kinds))
+        stmt = stmt.order_by(canonical_nodes.c.title).limit(limit)
+        async with self._sm() as session:
+            rows = (await session.execute(stmt)).all()
+        return [_row_to_node(r) for r in rows]
+
     async def existing_node_ids(self, ids: list[UUID]) -> set[UUID]:
         if not ids:
             return set()

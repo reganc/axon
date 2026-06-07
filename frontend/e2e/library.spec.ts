@@ -15,6 +15,25 @@ test("check out lands on the learning canvas", async ({ page }) => {
   await expect(page).toHaveURL(/\/learn\//);
 });
 
+test("search opens a node-detail page with relationships", async ({ page }) => {
+  await login(page);
+  await page.getByPlaceholder("Search the graph…").fill("convolution");
+  await page.getByRole("button", { name: "Search" }).click();
+  const firstResult = page.locator('a[href^="/node/"]').first();
+  await expect(firstResult).toBeVisible();
+  await firstResult.click();
+  await expect(page).toHaveURL(/\/node\//);
+  await expect(page.getByText(/Connections/)).toBeVisible();
+});
+
+test("a facet type chip drills into a kind list", async ({ page }) => {
+  await login(page);
+  const browse = page.getByLabel("Browse the graph");
+  await browse.getByRole("button", { name: /^person/ }).click();
+  await expect(page.getByText(/All person nodes/)).toBeVisible();
+  await expect(page.locator('a[href^="/node/"]').first()).toBeVisible();
+});
+
 test("browse facets are derived from the graph", async ({ page }) => {
   await login(page);
   const browse = page.getByLabel("Browse the graph");
@@ -30,9 +49,12 @@ test("cold-start curiosity anchors surface question and person nodes", async ({ 
   await expect(anchors).toBeVisible();
   // a known question anchor is present (.first() tolerates a persistent dev DB
   // that may hold a same-titled node from a prior test run; CI's DB is fresh)
-  const question = anchors.getByText("What is intelligence?").first();
-  await expect(question).toBeVisible();
-  // starting from an anchor opens a (free-roam) learning canvas
-  await question.click();
+  await expect(anchors.getByText("What is intelligence?").first()).toBeVisible();
+  // the anchor title links to its node-detail page…
+  await anchors.getByText("What is intelligence?").first().click();
+  await expect(page).toHaveURL(/\/node\//);
+  // …and "Start →" begins a free-roam learning session
+  await page.goBack();
+  await anchors.getByRole("button", { name: "Start →" }).first().click();
   await expect(page).toHaveURL(/\/learn\//);
 });
