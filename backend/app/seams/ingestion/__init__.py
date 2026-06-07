@@ -23,10 +23,13 @@ from uuid import UUID
 
 from ...config import Settings, get_settings
 from ...embeddings import Embedder
-from ...ports import CandidateNode, CanonResult, IngestReport, NodeIn
+from ...ports import CandidateNode, CanonResult, IngestReport, LLMPort, Msg, NodeIn
 from ..content import Content
+from . import miner
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+_SOURCE_KINDS = {"claude_code_transcript", "obsidian_note"}
 
 
 def normalize_key(text: str) -> str:
@@ -40,10 +43,12 @@ class Ingestion:
         content: Content,
         embedder: Embedder,
         settings: Settings | None = None,
+        llm: LLMPort | None = None,
     ) -> None:
         self._content = content
         self._embed = embedder
         self._s = settings or get_settings()
+        self._llm = llm  # required for mine(); optional for canonicalize/seed
 
     # -- canonicalize ---------------------------------------------------------
 
@@ -145,8 +150,102 @@ class Ingestion:
 
         return report
 
+    # -- transcript miner (Phase 3) -------------------------------------------
+
     async def mine(self, source_kind: str, path: str) -> IngestReport:
-        raise NotImplementedError("transcript miner — Phase 3")
+        """Mine a Claude Code transcript or Obsidian note into the canonical graph.
+
+        parse -> redact (before any embed/persist) -> segment -> drop churn ->
+        extract -> ground -> canonicalize -> within-source adjacency edges.
+        Returns an IngestReport: nodes created, merged, edges, and the redaction
+        count (secrets scrubbed before persistence).
+        """
+        if source_kind not in _SOURCE_KINDS:
+            raise ValueError(
+                f"unknown source kind: {source_kind!r} (expected {_SOURCE_KINDS})"
+            )
+        if self._llm is None:
+            raise RuntimeError("mine() requires an LLM gateway; none was wired")
+
+        p = Path(path)
+        raw = p.read_text() if p.is_file() else path  # accept inline content in tests
+        tag = p.stem if p.is_file() else "inline"
+        report = IngestReport()
+
+        # parse -> redact (mandatory, before embeddings or storage)
+        if source_kind == "claude_code_transcript":
+            turns = miner.parse_claude_jsonl(raw)
+            for t in turns:
+                t.text, n = miner.redact(t.text)
+                report.redacted += n
+            spans = await miner.segment_turns(turns, self._embed, self._s)
+        else:  # obsidian_note
+            spans = []
+            for section in miner.parse_obsidian(raw):
+                clean, n = miner.redact(section.text)
+                report.redacted += n
+                spans.append(clean)
+
+        await self._content.seed_source(
+            {"id": None, "kind": source_kind, "title": tag, "uri": str(p)}
+        )
+
+        extractor = miner.TranscriptExtractor(self._llm)
+        prev_id: UUID | None = None
+        kept = 0
+        for i, span_text in enumerate(spans):
+            if kept >= self._s.miner_max_spans:
+                break
+            if not miner.keep_span(span_text, self._s):
+                continue
+            candidate = await extractor.extract(span_text, source_ref=f"{tag}#span{i}")
+            candidate = await self._ground(candidate)
+            result = await self.canonicalize(candidate)
+            if result.action == "created":
+                report.nodes += 1
+            else:
+                report.merged += 1
+            if prev_id is not None and prev_id != result.node.id:
+                await self._content.add_edge(
+                    prev_id, result.node.id, "rabbit_hole", origin="ai_generated"
+                )
+                report.edges += 1
+            prev_id = result.node.id
+            kept += 1
+
+        return report
+
+    async def _ground(self, candidate: CandidateNode) -> CandidateNode:
+        """Grounding gate (Researcher-equivalent, ingestion-local so this seam stays
+        independent of companion). A conversation is a lead, not authority."""
+        msgs = [
+            Msg(
+                role="system",
+                content="You judge how well-grounded a mined explanation is; assign a calibrated confidence in [0,1].",
+            ),
+            Msg(
+                role="user",
+                content=(
+                    f"TASK: ground\nTitle: {candidate.title}\nBody: {candidate.body}\n"
+                    'Return JSON only: {"confidence": 0.0-1.0, "source_ref": "..."}'
+                ),
+            ),
+        ]
+        from ...jsonutil import parse_json
+
+        data = parse_json(await self._llm.complete(msgs, "reason"))
+        data = data if isinstance(data, dict) else {}
+        try:
+            confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        return candidate.model_copy(update={"confidence": confidence})
+
+    async def purge_by_source(self, source_tag: str) -> int:
+        """Delete mined nodes (and their cascading edges) derived from a source,
+        identified by their `source_ref` prefix `"{tag}#"`. Authored/locked nodes
+        are never touched."""
+        return await self._content.delete_unlocked_by_source_prefix(f"{source_tag}#")
 
 
 def _resolve(path: str) -> Path:

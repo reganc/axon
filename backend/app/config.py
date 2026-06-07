@@ -66,6 +66,15 @@ class Settings(BaseSettings):
         0.93  # background dedup of near-duplicate AI nodes
     )
 
+    # transcript miner (Phase 3)
+    miner_segment_threshold: float = (
+        0.6  # consecutive-message cosine below -> topic boundary
+    )
+    miner_min_span_chars: int = (
+        140  # drop spans shorter than this (debugging churn / dead-ends)
+    )
+    miner_max_spans: int = 40  # safety cap on spans mined per source
+
 
 @lru_cache
 def get_settings() -> Settings:

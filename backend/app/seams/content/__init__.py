@@ -116,6 +116,18 @@ class Content:
                 raise NotFoundError(f"node {canonical_key!r} not found")
             return _row_to_node(row)
 
+    async def delete_unlocked_by_source_prefix(self, prefix: str) -> int:
+        """Delete unlocked nodes whose source_ref starts with `prefix` (cascades to
+        their edges + overlay). Locked/authored nodes are never touched."""
+        async with self._sm() as session, session.begin():
+            result = await session.execute(
+                canonical_nodes.delete().where(
+                    canonical_nodes.c.locked.is_(False)
+                    & canonical_nodes.c.source_ref.like(f"{prefix}%")
+                )
+            )
+            return result.rowcount
+
     async def add_edge(
         self,
         src: UUID,
