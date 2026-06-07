@@ -3,6 +3,7 @@
 `GET /browse/facets` returns a hierarchy computed live from the graph and cached
 briefly. It is a *view*, not a stored tree: add nodes and the facets change.
 """
+
 import time
 
 from fastapi import APIRouter, Depends, Query

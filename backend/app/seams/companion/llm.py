@@ -1,9 +1,10 @@
 """LLM gateway (LLMPort) — routes by tier and degrades gracefully.
 
-- tier="fast"   -> Ollama chat (narration, quick adaptations)
-- tier="reason" -> Anthropic API (planning, grounding); falls back to Ollama when
-  no key is configured (AXON_LLM_REASON_FALLBACK_TO_FAST).
-- embed         -> the Phase-1 embedder (Ollama nomic-embed-text, 768-d).
+- tier="fast"   -> the centralized llm-app gateway (OpenAI-compatible chat, model
+  alias `default`) — narration, quick adaptations, drafts.
+- tier="reason" -> the Anthropic API (planning, grounding); falls back to the fast
+  gateway when no Anthropic key is configured (AXON_LLM_REASON_FALLBACK_TO_FAST).
+- embed         -> the Phase-1 embedder (the box's Ollama nomic-embed-text, 768-d).
 
 Every chat call falls back to a deterministic `FakeLLM` if the live backend
 errors, so a turn never hard-crashes on a flaky model host. Tests inject a
@@ -30,16 +31,24 @@ def _as_dicts(msgs: list[Msg]) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in msgs]
 
 
-class OllamaChat:
-    def __init__(self, base_url: str, model: str, timeout: float = 120.0) -> None:
-        self.base_url = base_url.rstrip("/")
+class GatewayChat:
+    """The fast/local tier: the centralized llm-app gateway, OpenAI-compatible
+    (`POST {base}/chat/completions`, Bearer auth, model alias `default`). Every
+    app on this host shares it — we never hardcode a concrete local model."""
+
+    def __init__(
+        self, base_url: str, api_key: str, model: str, timeout: float = 120.0
+    ) -> None:
+        self.url = f"{base_url.rstrip('/')}/chat/completions"
+        self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.model = model
         self.timeout = timeout
 
     async def complete(self, msgs: list[Msg]) -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(
-                f"{self.base_url}/api/chat",
+                self.url,
+                headers=self.headers,
                 json={
                     "model": self.model,
                     "messages": _as_dicts(msgs),
@@ -47,25 +56,26 @@ class OllamaChat:
                 },
             )
             resp.raise_for_status()
-            return resp.json()["message"]["content"]
+            return resp.json()["choices"][0]["message"]["content"]
 
     async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
-                f"{self.base_url}/api/chat",
+                self.url,
+                headers=self.headers,
                 json={"model": self.model, "messages": _as_dicts(msgs), "stream": True},
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
-                    if not line:
+                    if not line or not line.startswith("data:"):
                         continue
-                    obj = json.loads(line)
-                    chunk = obj.get("message", {}).get("content", "")
-                    if chunk:
-                        yield chunk
-                    if obj.get("done"):
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
                         break
+                    delta = json.loads(data)["choices"][0]["delta"].get("content")
+                    if delta:
+                        yield delta
 
 
 class AnthropicChat:
@@ -123,7 +133,7 @@ class LLMGateway:
         settings: Settings | None = None,
         embedder: Embedder | None = None,
         *,
-        ollama: OllamaChat | None = None,
+        fast: GatewayChat | None = None,
         anthropic_chat: AnthropicChat | None = None,
         fake: FakeLLM | None = None,
         controller: "CostController | None" = None,
@@ -135,9 +145,10 @@ class LLMGateway:
         self._role = role
         self._embedder = embedder or build_embedder(s)
         self._fake = fake or FakeLLM()
-        self._ollama = ollama or (
-            OllamaChat(s.ollama_base_url, s.ollama_chat_model)
-            if s.ollama_base_url
+        # fast/local tier = the centralized llm-app gateway
+        self._fast = fast or (
+            GatewayChat(s.llm_base_url, s.llm_api_key, s.llm_model)
+            if s.llm_base_url
             else None
         )
         if anthropic_chat is not None:
@@ -154,7 +165,7 @@ class LLMGateway:
         """A gateway whose chat is a scripted FakeLLM (no live model) but whose
         `embed` uses the given real embedder. For deterministic companion tests."""
         gw = cls(settings, embedder, fake=FakeLLM(handler))
-        gw._ollama = None
+        gw._fast = None
         gw._anthropic = None
         return gw
 
@@ -164,8 +175,8 @@ class LLMGateway:
                 return self._anthropic
             if not self._s.llm_reason_fallback_to_fast:
                 return self._fake
-        if self._ollama is not None:
-            return self._ollama
+        if self._fast is not None:
+            return self._fast
         return self._fake
 
     async def complete(

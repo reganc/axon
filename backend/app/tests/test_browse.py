@@ -1,4 +1,5 @@
 """Browse facets — the derived taxonomy lens (Phase 5 §8)."""
+
 from __future__ import annotations
 
 from app.ports import NodeIn
