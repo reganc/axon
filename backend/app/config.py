@@ -9,7 +9,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="AXON_", env_file=".env", extra="ignore"
+        env_prefix="AXON_",
+        env_file=".env",
+        extra="ignore",
+        protected_namespaces=(),  # we use model_reason / model_cheap fields
     )
 
     # app
@@ -74,6 +77,20 @@ class Settings(BaseSettings):
         140  # drop spans shorter than this (debugging churn / dead-ends)
     )
     miner_max_spans: int = 40  # safety cap on spans mined per source
+
+    # cost control (specs/06): tiered routing + budgets + circuit breaker
+    model_reason: str = "claude-sonnet-4-6"  # default cloud reasoning model
+    model_cheap: str = "claude-haiku-4-5"  # cheap cloud tasks (extract/classify)
+    escalate_floor: float = (
+        0.6  # local draft below this confidence -> escalate to cloud
+    )
+    budget_session_usd: float = 0.50
+    budget_user_daily_usd: float = 2.00
+    budget_global_daily_usd: float = 50.00
+    budget_soft_fraction: float = 0.8  # degrade to local at this fraction of a budget
+    batch_enabled: bool = (
+        True  # route latency-tolerant cloud work through the Batch API
+    )
 
 
 @lru_cache

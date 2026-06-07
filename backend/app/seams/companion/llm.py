@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator, Callable
 import httpx
 
 from ...config import Settings, get_settings
+from ...cost import CostController, TaskKind, estimate_tokens
 from ...embeddings import Embedder, build_embedder
 from ...ports import Msg, Tier
 
@@ -125,9 +126,13 @@ class LLMGateway:
         ollama: OllamaChat | None = None,
         anthropic_chat: AnthropicChat | None = None,
         fake: FakeLLM | None = None,
+        controller: "CostController | None" = None,
+        role: str = "companion",
     ) -> None:
         s = settings or get_settings()
         self._s = s
+        self._controller = controller
+        self._role = role
         self._embedder = embedder or build_embedder(s)
         self._fake = fake or FakeLLM()
         self._ollama = ollama or (
@@ -163,17 +168,50 @@ class LLMGateway:
             return self._ollama
         return self._fake
 
-    async def complete(self, msgs: list[Msg], tier: Tier) -> str:
-        backend = self._backend(tier)
+    async def complete(
+        self,
+        msgs: list[Msg],
+        tier: Tier,
+        *,
+        task: "TaskKind | None" = None,
+        confidence: float | None = None,
+        checkout_id=None,
+        user_id=None,
+    ) -> str:
+        # Cost control: when a task is named and a controller is wired, the
+        # controller decides local vs cloud (degrading to local when over budget)
+        # and every cloud call is metered. Otherwise fall back to the raw tier.
+        effective = tier
+        routed = None
+        if task is not None and self._controller is not None:
+            routed = await self._controller.route(
+                task, confidence=confidence, user_id=user_id, checkout_id=checkout_id
+            )
+            effective = "reason" if routed.tier == "cloud" else "fast"
+
+        backend = self._backend(effective)
         try:
-            return await backend.complete(msgs)
+            result = await backend.complete(msgs)
         except Exception as exc:  # noqa: BLE001 - degrade, never crash a turn
             log.warning(
                 "llm complete failed on %s (%s); using fake",
                 type(backend).__name__,
                 exc,
             )
-            return await self._fake.complete(msgs)
+            result = await self._fake.complete(msgs)
+
+        if routed is not None:
+            await self._controller.record(
+                task=task,
+                role=self._role,
+                routed=routed,
+                input_tokens=sum(estimate_tokens(m.content) for m in msgs),
+                cached_input_tokens=0,
+                output_tokens=estimate_tokens(result),
+                checkout_id=checkout_id,
+                user_id=user_id,
+            )
+        return result
 
     async def stream(self, msgs: list[Msg], tier: Tier) -> AsyncIterator[str]:
         backend = self._backend(tier)

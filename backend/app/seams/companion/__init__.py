@@ -85,8 +85,9 @@ class Companion:
         self, checkout_id: UUID, message: str, inbox: asyncio.Queue | None = None
     ) -> AsyncIterator[StreamEvent]:
         cid = UUID(str(checkout_id))
+        owner = await self._library.checkout_owner(cid)
         yield _ev("status", phase="planning", detail="checking the library…")
-        plan = await self._planner.plan(message)
+        plan = await self._planner.plan(message, checkout_id=cid, user_id=owner)
 
         prev_id: UUID | None = None
         produced = 0
@@ -106,7 +107,7 @@ class Companion:
                 )
 
             yield _ev("status", phase="step", detail=title)
-            node, events = await self._materialize(cid, title, message)
+            node, events = await self._materialize(cid, title, message, user_id=owner)
             for e in events:
                 yield e
 
@@ -142,12 +143,15 @@ class Companion:
     ) -> AsyncIterator[StreamEvent]:
         """Spawn a rabbit-hole branch off an existing node."""
         cid, anchor = UUID(str(checkout_id)), UUID(str(node_id))
+        owner = await self._library.checkout_owner(cid)
         sub = await self._content.get_subgraph([anchor], depth=0)
         anchor_node = sub.nodes[0]
         yield _ev("status", phase="rabbit_hole", detail=anchor_node.title)
 
         title = f"A deeper look at {anchor_node.title}"
-        node, events = await self._materialize(cid, title, anchor_node.title)
+        node, events = await self._materialize(
+            cid, title, anchor_node.title, user_id=owner
+        )
         for e in events:
             yield e
 
@@ -180,6 +184,7 @@ class Companion:
         that answer it rather than serving a body. Each generated concept is linked
         back to the question with an `answers` edge."""
         cid, qid = UUID(str(checkout_id)), UUID(str(node_id))
+        owner = await self._library.checkout_owner(cid)
         question = (await self._content.get_subgraph([qid], depth=0)).nodes[0]
         yield _ev(
             "status",
@@ -187,10 +192,14 @@ class Companion:
             detail=f"Building an answer to: {question.title}",
         )
 
-        plan = await self._planner.plan(question.hook or question.title)
+        plan = await self._planner.plan(
+            question.hook or question.title, checkout_id=cid, user_id=owner
+        )
         produced = 0
         for title in plan[: self._s.companion_max_steps]:
-            node, events = await self._materialize(cid, title, question.title)
+            node, events = await self._materialize(
+                cid, title, question.title, user_id=owner
+            )
             for e in events:
                 yield e
             if node.id != qid:
@@ -217,7 +226,12 @@ class Companion:
     # -- per-step: reuse or generate -----------------------------------------
 
     async def _materialize(
-        self, checkout_id: UUID, title: str, subject: str
+        self,
+        checkout_id: UUID,
+        title: str,
+        subject: str,
+        *,
+        user_id: UUID | None = None,
     ) -> tuple[Node, list[StreamEvent]]:
         """Return the resolved canonical node + the events to emit for it."""
         events: list[StreamEvent] = []
@@ -247,8 +261,12 @@ class Companion:
             return existing, events
 
         # gap -> generate, ground, optimistic render, then canonicalize
-        candidate = await self._generator.generate(title, subject)
-        candidate = await self._researcher.ground(candidate)
+        candidate = await self._generator.generate(
+            title, subject, checkout_id=checkout_id, user_id=user_id
+        )
+        candidate = await self._researcher.ground(
+            candidate, checkout_id=checkout_id, user_id=user_id
+        )
         temp_id = str(uuid4())
         events.append(_ev("say", text=f"Here's a new idea: {title}."))
         events.append(

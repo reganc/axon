@@ -136,3 +136,24 @@ CREATE TABLE interaction_events (
 );
 -- SELECT create_hypertable('interaction_events','ts');   -- run after timescaledb is enabled
 CREATE INDEX idx_events_checkout ON interaction_events(checkout_id, ts DESC);
+
+-- ----------------------------------------------------------------------------
+--  USAGE_EVENTS — the LLM cost ledger (cost control, specs/06). Every cloud
+--  call is metered here so budgets can be enforced and spend audited.
+-- ----------------------------------------------------------------------------
+CREATE TABLE usage_events (
+    id                  BIGSERIAL PRIMARY KEY,
+    ts                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    task                TEXT NOT NULL,
+    role                TEXT NOT NULL,
+    tier                TEXT NOT NULL,         -- 'local' | 'cloud'
+    model               TEXT,                  -- cloud model id, or NULL for local
+    input_tokens        INT  NOT NULL DEFAULT 0,
+    cached_input_tokens INT  NOT NULL DEFAULT 0,
+    output_tokens       INT  NOT NULL DEFAULT 0,
+    cost_usd            DOUBLE PRECISION NOT NULL DEFAULT 0,
+    checkout_id         UUID,
+    user_id             UUID
+);
+CREATE INDEX idx_usage_user_ts ON usage_events (user_id, ts DESC);
+CREATE INDEX idx_usage_ts ON usage_events (ts DESC);
