@@ -11,6 +11,22 @@ export interface SpineSummary {
   node_count: number;
 }
 
+export interface FacetValue {
+  label: string;
+  node_count: number;
+  sample_titles: string[];
+}
+
+export interface FacetGroup {
+  dimension: string;
+  values: FacetValue[];
+}
+
+export interface Facets {
+  node_total: number;
+  groups: FacetGroup[];
+}
+
 export interface NodeDTO {
   id: string;
   canonical_key: string;

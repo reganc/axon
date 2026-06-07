@@ -105,6 +105,25 @@ class SpineSummary(BaseModel):
     node_count: int = 0
 
 
+# Phase 5 §8: a browse hierarchy *derived* from current graph contents (a view,
+# not a stored tree). Each dimension's values are computed live and change as the
+# graph grows.
+class FacetValue(BaseModel):
+    label: str
+    node_count: int
+    sample_titles: list[str] = Field(default_factory=list)
+
+
+class FacetGroup(BaseModel):
+    dimension: str  # "type" | "origin" | "subject" | "theme"
+    values: list[FacetValue]
+
+
+class Facets(BaseModel):
+    node_total: int
+    groups: list[FacetGroup]
+
+
 class ScoredNode(BaseModel):
     node: Node
     score: float

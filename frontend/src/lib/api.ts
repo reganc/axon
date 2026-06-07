@@ -2,6 +2,7 @@
 import { getToken } from "./auth";
 import type {
   Checkout,
+  Facets,
   NodeDTO,
   NodeState,
   Role,
@@ -56,6 +57,8 @@ export async function issueToken(userId: string, role: Role): Promise<string> {
 export const listSpines = () => request<SpineSummary[]>("/graph/spines");
 
 export const listEntryPoints = () => request<NodeDTO[]>("/library/entry-points");
+
+export const getFacets = () => request<Facets>("/browse/facets");
 
 export const getSpine = (spineId: string) =>
   request<SpineWithNodes>(`/graph/spines/${spineId}`);

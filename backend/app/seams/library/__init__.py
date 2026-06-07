@@ -14,9 +14,20 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from sqlalchemy import text
+
 from ...embeddings import Embedder
 from ...errors import NotFoundError
-from ...ports import Checkout, Coverage, Node, NodeState, ScoredNode
+from ...ports import (
+    Checkout,
+    Coverage,
+    Facets,
+    FacetGroup,
+    FacetValue,
+    Node,
+    NodeState,
+    ScoredNode,
+)
 from ...tables import canonical_nodes, checkouts, node_states, spines, users
 from ..content import _NODE_COLS, _row_to_node
 
@@ -30,6 +41,83 @@ class Library:
     ) -> None:
         self._sm = sessionmaker
         self._embed = embedder
+
+    async def facets(self) -> Facets:
+        """A browse hierarchy derived *live* from the graph (Phase 5 §8) — a view,
+        not a stored tree. Dimensions: type (kind), origin, subject (from spines),
+        and an embedding-clustered theme (each node grouped under its nearest
+        `person` hub). Counts change as the graph grows, proving it's a lens."""
+        async with self._sm() as session:
+            total = (
+                await session.execute(text("SELECT count(*) FROM canonical_nodes"))
+            ).scalar() or 0
+
+            type_rows = (
+                await session.execute(
+                    text(
+                        "SELECT kind, count(*) n, (array_agg(title ORDER BY title))[1:3] s "
+                        "FROM canonical_nodes GROUP BY kind ORDER BY n DESC"
+                    )
+                )
+            ).all()
+            origin_rows = (
+                await session.execute(
+                    text(
+                        "SELECT origin, count(*) n, (array_agg(title ORDER BY title))[1:3] s "
+                        "FROM canonical_nodes GROUP BY origin ORDER BY n DESC"
+                    )
+                )
+            ).all()
+            subject_rows = (
+                await session.execute(
+                    text(
+                        "SELECT s.subject, count(DISTINCT nid) n "
+                        "FROM spines s, jsonb_array_elements_text(s.node_sequence) nid "
+                        "GROUP BY s.subject ORDER BY n DESC"
+                    )
+                )
+            ).all()
+            # theme = cluster every non-person node under its nearest person hub
+            theme_rows = (
+                await session.execute(
+                    text(
+                        """
+                        WITH hubs AS (
+                            SELECT id, title, embedding FROM canonical_nodes
+                            WHERE kind = 'person' AND embedding IS NOT NULL
+                        )
+                        SELECT h.title label, count(*) n
+                        FROM canonical_nodes c
+                        JOIN LATERAL (
+                            SELECT title FROM hubs ORDER BY hubs.embedding <=> c.embedding LIMIT 1
+                        ) h ON TRUE
+                        WHERE c.embedding IS NOT NULL AND c.kind <> 'person'
+                        GROUP BY h.title ORDER BY n DESC
+                        """
+                    )
+                )
+            ).all()
+
+        def vals(rows, with_samples=True):
+            out = []
+            for r in rows:
+                m = r._mapping
+                out.append(
+                    FacetValue(
+                        label=str(m[list(m.keys())[0]]),
+                        node_count=int(m["n"]),
+                        sample_titles=list(m["s"]) if with_samples and "s" in m else [],
+                    )
+                )
+            return out
+
+        groups = [
+            FacetGroup(dimension="type", values=vals(type_rows)),
+            FacetGroup(dimension="origin", values=vals(origin_rows)),
+            FacetGroup(dimension="subject", values=vals(subject_rows, with_samples=False)),
+            FacetGroup(dimension="theme", values=vals(theme_rows, with_samples=False)),
+        ]
+        return Facets(node_total=int(total), groups=groups)
 
     async def entry_points(self, limit: int = 24) -> list[Node]:
         """Curiosity anchors for cold-start: question + person nodes. These seed
