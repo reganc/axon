@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { CompanionPanel } from "@/components/CompanionPanel";
 import { GraphCanvas } from "@/components/GraphCanvas";
@@ -15,10 +15,14 @@ import { useTranscriptStore } from "@/store/transcriptStore";
 function LearnInner({ checkoutId }: { checkoutId: string }) {
   const initGraph = useGraphStore((s) => s.init);
   const initTranscript = useTranscriptStore((s) => s.init);
+  const [title, setTitle] = useState<string | null>(null);
   const { connected, sendSubject, answer, interrupt, pullThread, exploreQuestion } =
     useCompanionStream(checkoutId);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      setTitle(sessionStorage.getItem(`axon.spine.title.${checkoutId}`));
+    }
     initGraph(checkoutId);
     initTranscript(checkoutId);
     // Seed the canvas with the checked-out spine (highlighted path) unless we
@@ -37,11 +41,12 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-2">
-        <div className="flex items-center gap-3">
-          <Link href="/library" className="text-sm text-muted hover:text-fg">
-            ← Library
+        <div className="flex items-center gap-2 text-sm">
+          <Link href="/library" className="text-muted hover:text-fg">
+            Library
           </Link>
-          <span className="text-sm font-medium text-fg">Learning canvas</span>
+          <span className="text-muted">/</span>
+          <span className="font-medium text-fg">{title ?? "Learning canvas"}</span>
         </div>
         <ThemeToggle />
       </header>

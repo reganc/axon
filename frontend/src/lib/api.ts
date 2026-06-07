@@ -2,6 +2,7 @@
 import { getToken } from "./auth";
 import type {
   Checkout,
+  EdgeDTO,
   Facets,
   NodeDTO,
   NodeState,
@@ -59,6 +60,31 @@ export const listSpines = () => request<SpineSummary[]>("/graph/spines");
 export const listEntryPoints = () => request<NodeDTO[]>("/library/entry-points");
 
 export const getFacets = () => request<Facets>("/browse/facets");
+
+export interface ScoredNodeDTO {
+  node: NodeDTO;
+  score: number;
+}
+
+export function searchNodes(q: string, kinds?: string[]): Promise<ScoredNodeDTO[]> {
+  const params = new URLSearchParams({ q });
+  if (kinds?.length) params.set("kinds", kinds.join(","));
+  return request<ScoredNodeDTO[]>(`/library/search?${params.toString()}`);
+}
+
+export function listNodes(kinds?: string[], limit = 60): Promise<NodeDTO[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (kinds?.length) params.set("kinds", kinds.join(","));
+  return request<NodeDTO[]>(`/graph/nodes?${params.toString()}`);
+}
+
+export interface SubgraphDTO {
+  nodes: NodeDTO[];
+  edges: EdgeDTO[];
+}
+
+export const getNodeSubgraph = (nodeId: string) =>
+  request<SubgraphDTO>(`/graph/nodes/${nodeId}`);
 
 export const getSpine = (spineId: string) =>
   request<SpineWithNodes>(`/graph/spines/${spineId}`);
