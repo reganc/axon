@@ -80,6 +80,14 @@ class SpineWithNodes(BaseModel):
     nodes: list[Node]
 
 
+class SpineSummary(BaseModel):
+    id: UUID
+    title: str
+    subject: str
+    description: str | None = None
+    node_count: int = 0
+
+
 class ScoredNode(BaseModel):
     node: Node
     score: float

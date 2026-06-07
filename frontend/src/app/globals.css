@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — the ONLY place colors are defined. Light is :root, dark is
+   .dark (toggled by next-themes). Components reference tokens via Tailwind
+   (bg-bg, text-fg, border-border, …) — never hardcoded colors. */
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --surface-2: #f0f0f3;
+  --border: #e2e2e8;
+  --fg: #1a1a1f;
+  --muted: #6b6b76;
+  --accent: #4f46e5;
+  --accent-fg: #ffffff;
+  --spine: #4f46e5;
+  --node-bg: #ffffff;
+  --warn: #b45309;
+}
+
+.dark {
+  --bg: #0d0d11;
+  --surface: #16161c;
+  --surface-2: #1e1e26;
+  --border: #2a2a34;
+  --fg: #ececf1;
+  --muted: #9a9aa6;
+  --accent: #818cf8;
+  --accent-fg: #0d0d11;
+  --spine: #818cf8;
+  --node-bg: #1a1a22;
+  --warn: #fbbf24;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* React Flow surface follows the theme tokens too. */
+.react-flow__background {
+  background: var(--bg);
+}
