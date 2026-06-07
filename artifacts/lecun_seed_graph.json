@@ -1,0 +1,1090 @@
+{
+  "sources": [
+    {
+      "id": "c50c3ae0-b52e-52bc-8076-5848c5194349",
+      "kind": "markdown_course",
+      "title": "Understanding Yann LeCun — 3-course learning path",
+      "uri": "lecun-course/",
+      "ingested_at": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ccfe431f-415c-5575-b3ac-60a50326ec38",
+      "canonical_key": "connectionism-vs-symbolic-ai",
+      "title": "Connectionism vs. symbolic AI",
+      "kind": "concept",
+      "hook": "When LeCun started, 'AI' meant writing every rule by hand. He bet on machines that figure out the rules themselves — and was deeply unfashionable for it.",
+      "body": "Symbolic AI encodes knowledge as explicit hand-coded rules, logic, and expert systems. Connectionism takes the opposite stance: build a network of simple units and let it *learn* its internal parameters from data instead of programming knowledge in. LeCun's 1987 PhD was on connectionist learning models — a deliberate minority choice.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What's the core difference between symbolic AI and connectionism?"
+      ],
+      "mastery_criteria": [
+        "Can contrast rule-encoding with learning-from-data"
+      ],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.1",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "45f10d9b-d786-5687-a75d-2bd1b67be8b3",
+      "canonical_key": "lecuns-connectionist-bet",
+      "title": "LeCun's connectionist bet",
+      "kind": "concept",
+      "hook": "Choosing neural nets in the 1980s was a career risk bordering on reckless. Why would a young engineer wager decades on the unpopular side?",
+      "body": "LeCun (b. France, 1960; PhD 1987) bet that learning from data — not encoding rules by hand — was the path to machine intelligence, a minority position when symbolic methods held the funding and momentum. This long-horizon, against-the-grain temperament recurs throughout his career.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Why was choosing neural networks a professional risk in the 1980s?"
+      ],
+      "mastery_criteria": [
+        "Can explain the early bet and the risk it carried"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.1",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "ca5d83d4-73c4-535d-b064-2f13906c3633",
+      "canonical_key": "ai-winter",
+      "title": "The AI winters",
+      "kind": "concept",
+      "hook": "Twice, the whole field decided AI was a dead end and the money vanished. LeCun kept working through it anyway.",
+      "body": "An *AI winter* is a period when funding, interest, and optimism collapse after hype outruns results. LeCun spent much of the 1990s–2000s on neural networks through exactly such a stretch, when the field had largely moved on to other methods.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What is an AI winter, and what causes it?"
+      ],
+      "mastery_criteria": [
+        "Can define an AI winter and its cause"
+      ],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "2c42d4fe-e646-588b-ab81-65826dd36c2f",
+      "canonical_key": "why-neural-nets-stalled",
+      "title": "Why neural nets stalled for 20 years",
+      "kind": "concept",
+      "hook": "The neural-net idea wasn't wrong for two decades — it was starving. Three things it was missing.",
+      "body": "Neural nets underperformed for years not because the idea was flawed but because conditions were missing: not enough labeled data, not enough compute (until GPUs were repurposed in the late 2000s), and optimization difficulties like vanishing gradients in deep stacks.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Name two practical constraints that limited neural networks before ~2010."
+      ],
+      "mastery_criteria": [
+        "Can list data, compute, and optimization as the limiting factors"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "b4db0225-b311-584b-a180-f78074102736",
+      "canonical_key": "early-vs-wrong",
+      "title": "Being early vs. being wrong",
+      "kind": "concept",
+      "hook": "Being early and being wrong look identical for years. How do you tell them apart while you're living it?",
+      "body": "A transferable research skill: separating a flawed theory from an under-resourced one. LeCun's persistence wasn't stubbornness against refutation — it was a judgment that the *idea* was sound and the *conditions* simply hadn't arrived.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Why is 'being early' so hard to distinguish from 'being wrong'?"
+      ],
+      "mastery_criteria": [
+        "Can articulate the early-vs-wrong distinction as a judgment skill"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "d77f896e-a4cd-5d4e-903e-0d024f3dbbff",
+      "canonical_key": "bell-labs-and-the-deployed-cnn",
+      "title": "Bell Labs and the deployed CNN",
+      "kind": "concept",
+      "hook": "Long before deep learning was cool, a LeCun system was already reading the dollar amounts on your bank checks.",
+      "body": "At AT&T Bell Labs (1988–1996) LeCun applied gradient-based learning to real recognition problems and developed the convolutional neural network into a deployable system that read handwritten digits — used commercially to read the amounts on bank checks.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What real-world product used LeCun's Bell Labs digit-recognition work?"
+      ],
+      "mastery_criteria": [
+        "Can place the Bell Labs era and the check-reading deployment"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.3",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "b13d991a-63fc-5f74-a184-64553e4217c0",
+      "canonical_key": "the-deep-learning-trio",
+      "title": "The deep learning trio",
+      "kind": "concept",
+      "hook": "Three people kept neural nets alive through the lean years — and split computing's highest prize for it.",
+      "body": "LeCun did postdoctoral work with Geoffrey Hinton (his advisor and four-decade collaborator). LeCun, Hinton, and Yoshua Bengio jointly received the 2018 ACM Turing Award for deep learning. Seeing them as a connected group, not isolated geniuses, explains how the research program survived.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Who are the three recipients of the 2018 Turing Award for deep learning?"
+      ],
+      "mastery_criteria": [
+        "Can identify the trio and the shared 2018 Turing Award"
+      ],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.3",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "9ce545f4-84e0-52db-89a7-eba7798e8cdc",
+      "canonical_key": "the-2012-inflection",
+      "title": "The 2012 inflection",
+      "kind": "concept",
+      "hook": "Almost overnight, neural nets went from backwater to the main event. What flipped?",
+      "body": "Around 2012 the conditions LeCun had waited on arrived together — large labeled image datasets, fast GPUs, and refined training techniques — and deep nets abruptly started winning competitions, especially in vision. The field's center of gravity shifted.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What three things came together around 2012 to make deep learning effective?"
+      ],
+      "mastery_criteria": [
+        "Can name data + GPUs + better training as the 2012 trigger"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.4",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "4f859f1b-ccf7-58fb-88d0-010beaf0895a",
+      "canonical_key": "building-fair-institution",
+      "title": "Building an institution (FAIR)",
+      "kind": "concept",
+      "hook": "Inventing an architecture is one kind of influence. Building the lab that shapes a whole field is another.",
+      "body": "In 2013 LeCun joined Meta (then Facebook) and built its AI research organization from the ground up as Chief AI Scientist — a role held ~12 years (2013–2025) — while remaining an NYU professor and founding NYU's Center for Data Science. His influence runs through both *ideas* and *institutions*.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What role did LeCun play at Meta, and for roughly how long?"
+      ],
+      "mastery_criteria": [
+        "Can describe institution-building as a distinct form of influence"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.4",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "79f6fa9b-a3cb-5a16-9224-4251ec93048a",
+      "canonical_key": "lecuns-honors-and-legacy",
+      "title": "Honors and legacy",
+      "kind": "concept",
+      "hook": "Turing Award, Legion of Honour, National Academy of Sciences — the settled, celebrated half of the story.",
+      "body": "Beyond the 2018 Turing Award, LeCun's honors include the Queen Elizabeth Prize for Engineering, the VinFuture Prize, France's Legion of Honour, and U.S. National Academy of Sciences membership — recognizing work foundational to computer vision, document recognition, and the broader deep-learning toolkit.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Name two major awards LeCun has received."
+      ],
+      "mastery_criteria": [
+        "Can list major honors recognizing his foundational work"
+      ],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.5",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "38d25df7-c593-5176-ae86-28af3feed9eb",
+      "canonical_key": "lecun-as-public-voice",
+      "title": "LeCun as public intellectual",
+      "kind": "concept",
+      "hook": "Most Turing laureates fade into quiet eminence. LeCun went the other way — picking very public fights.",
+      "body": "LeCun is one of the field's most visible and combative public voices, using talks, interviews, and social media to argue positions at odds with much of the industry — most notably that today's large language models are not the path to human-level intelligence. His legacy splits into a celebrated past and a contested present.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "How is LeCun's public role different from that of a typical research scientist?"
+      ],
+      "mastery_criteria": [
+        "Can characterize him as a deliberately provocative public intellectual"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#lesson-1.5",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "6e81b7a5-7605-597a-93c9-00b9c99d86bf",
+      "canonical_key": "apply-conviction-driven-research",
+      "title": "Argue: is conviction repeatable?",
+      "kind": "apply",
+      "hook": "Is conviction a repeatable strategy — or just survivorship bias dressed up as wisdom? Make the argument.",
+      "body": "Course 1 project. A written argument about conviction-driven research.",
+      "apply_prompt": "In 600–900 words, argue whether conviction-driven research — sticking with an unpopular idea for decades — is a repeatable strategy others should emulate, or whether it mostly looks wise in hindsight because we only remember those who turned out right (survivorship bias). Use LeCun's career as the primary example and address at least one counterexample of conviction that did NOT pay off. Assessed on reasoning and use of evidence, not which side you take.",
+      "recall_prompts": [],
+      "mastery_criteria": [
+        "Produces a reasoned argument using LeCun plus a counterexample"
+      ],
+      "depth_level": "apply",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-1#project",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "a8425814-19cb-5a4c-8c7a-6f3f2653653b",
+      "canonical_key": "loss-and-gradient-descent",
+      "title": "Loss and gradient descent",
+      "kind": "concept",
+      "hook": "Training a network is really just rolling downhill in a landscape with millions of dimensions. Here's the hill.",
+      "body": "Training is optimization. A **loss function** measures how wrong the outputs are; **gradient descent** computes the gradient (the direction of steepest increase in the loss w.r.t. each parameter) and steps the opposite way to shrink it.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What does a loss function measure, and what do we do with it?"
+      ],
+      "mastery_criteria": [
+        "Can describe training as loss minimization via gradient descent"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.1",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "67cf74e7-6864-527e-a23b-fd3505184632",
+      "canonical_key": "backpropagation",
+      "title": "Backpropagation",
+      "kind": "concept",
+      "hook": "A network can have millions of knobs. Computing how to turn each one seems hopeless — until one trick does it all in a single backward sweep.",
+      "body": "**Backpropagation** applies the chain rule systematically, working backward from the loss through each layer to compute every parameter's gradient in roughly the cost of one forward pass. This efficiency is what makes deep learning computationally possible at all.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Why is backpropagation necessary rather than computing each gradient separately?"
+      ],
+      "mastery_criteria": [
+        "Can explain backprop as efficient chain-rule credit assignment"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.1",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "87251e29-9905-529d-be37-8e916d2a0f74",
+      "canonical_key": "end-to-end-learning",
+      "title": "End-to-end learning",
+      "kind": "concept",
+      "hook": "Before LeCun, you hand-engineered features first, then learned. He showed you could feed in raw pixels and learn the whole thing at once.",
+      "body": "LeCun's foundational contribution was showing — early and convincingly — that gradient-based learning works on real recognition tasks *end to end*: a single system maps raw pixels to a decision without hand-engineered features first. That principle is now everywhere.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What does 'end-to-end learning' mean, and why did it matter?"
+      ],
+      "mastery_criteria": [
+        "Can contrast end-to-end learning with hand-engineered features"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.1",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "canonical_key": "the-convolutional-network",
+      "title": "The convolutional network",
+      "kind": "concept",
+      "hook": "Shift a cat ten pixels right and a plain network sees a totally different image. CNNs fix this with three ideas borrowed from how vision actually works.",
+      "body": "A fully connected network treats every pixel as independent — wasteful and fragile for images. The **convolutional neural network**, LeCun's signature architecture, builds in local receptive fields, weight sharing, and pooling, stacking them into a hierarchy of features from edges up to objects. It bakes in assumptions matching image structure, so it generalizes from limited data.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Why are CNNs well-suited to images?"
+      ],
+      "mastery_criteria": [
+        "Can explain why CNN structure matches image structure"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "595997e8-a2d5-5646-ae50-bd09f2d01cf1",
+      "canonical_key": "cnn-local-receptive-fields",
+      "title": "Local receptive fields",
+      "kind": "concept",
+      "hook": "Why should a unit detecting an edge bother looking at the whole image, when edges are local?",
+      "body": "Each unit looks at only a small patch of the image, because meaningful visual features (edges, corners) are local. This local receptive field is the first of the three CNN ideas.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What is a local receptive field?"
+      ],
+      "mastery_criteria": [
+        "Can define local receptive fields"
+      ],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "b1358792-3745-57cd-a2d8-024e3ed723aa",
+      "canonical_key": "cnn-weight-sharing",
+      "title": "Weight sharing & translation invariance",
+      "kind": "concept",
+      "hook": "A network can spot a cat in the top-left corner and go blind when the same cat slides to the bottom-right. One trick fixes it for good.",
+      "body": "The same small set of weights — a **filter** — slides across the whole image, so a feature detector (e.g. for a vertical edge) is reused everywhere. Weight sharing drastically cuts the parameter count and yields **translation invariance**: the feature is detected regardless of where it appears.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What problem does weight sharing solve compared to a fully connected network?"
+      ],
+      "mastery_criteria": [
+        "Can explain weight sharing and why it gives translation invariance"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "f8451e41-86b4-545a-8b0d-8c18f4245deb",
+      "canonical_key": "cnn-pooling",
+      "title": "Pooling",
+      "kind": "concept",
+      "hook": "How do you make a network shrug off a few pixels of jitter — and build big-picture structure out of fine detail?",
+      "body": "**Pooling** (subsampling) periodically downsamples by summarizing a region (e.g. taking the maximum activation), adding tolerance to small shifts and distortions and building a hierarchy from fine detail to coarse structure.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What does pooling add to a CNN?"
+      ],
+      "mastery_criteria": [
+        "Can explain pooling and its role in the feature hierarchy"
+      ],
+      "depth_level": "intro",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "ffb09263-f238-5808-b7e3-2f1c0c8c633e",
+      "canonical_key": "lenet-and-document-recognition",
+      "title": "LeNet and document recognition",
+      "kind": "concept",
+      "hook": "The architecture lineage in your phone's camera traces back to a 1990s network that read checks for a living.",
+      "body": "**LeNet** was LeCun's CNN that recognized handwritten digits well enough to deploy commercially for document recognition — the canonical proof that the convolutional ideas plus gradient-based learning solve a real recognition problem end to end.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What problem did LeNet solve in production?"
+      ],
+      "mastery_criteria": [
+        "Can connect LeNet to the deployed document-recognition breakthrough"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.3",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+      "canonical_key": "build-lenet-mnist-classifier",
+      "title": "Build a LeNet-style MNIST classifier",
+      "kind": "apply",
+      "hook": "Reading is overrated. Build the thing LeCun built — a digit classifier — and train it yourself.",
+      "body": "Course 2 project. A working MNIST classifier plus a written comparison to a modern architecture.\n\n```python\n# LeNet-style CNN on MNIST (PyTorch sketch)\n#  conv -> pool -> conv -> pool -> dense\n# 1. Data: MNIST, normalized\n# 2. Model: two conv+pool blocks, then dense head\n# 3. Train: forward pass -> loss -> backprop -> optimizer step\n# 4. Evaluate: accuracy on the test split\n```",
+      "apply_prompt": "Build and train a LeNet-style CNN on MNIST (conv -> pool -> conv -> pool -> dense) in PyTorch: normalize the data, define the network, run a training loop (forward pass, loss, backprop, optimizer step), and evaluate accuracy. A free Colab or local PyTorch environment is enough. Then write a short comparison to a modern architecture (e.g. a Vision Transformer): what assumptions does each bake in, and where does each win?",
+      "recall_prompts": [],
+      "mastery_criteria": [
+        "Trains a working MNIST classifier and reports test accuracy",
+        "Writes a reasoned comparison to a modern architecture"
+      ],
+      "depth_level": "apply",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.4",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "835f9404-8eee-54a6-a8a9-c02213a2afb8",
+      "canonical_key": "energy-based-models",
+      "title": "Energy-based models",
+      "kind": "concept",
+      "hook": "Instead of asking a model to output the answer, what if you ask it to score how well any answer fits — and pick the lowest-energy one?",
+      "body": "**Energy-based models** assign a scalar 'energy' to configurations of inputs and outputs, with low energy meaning compatible. Rather than predicting an output directly, you find the output that *minimizes* energy. This framing is the thread connecting LeCun's foundational work to his current world-model research.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What does an energy-based model score, and how is inference framed?"
+      ],
+      "mastery_criteria": [
+        "Can explain energy as compatibility and inference as energy minimization"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-2#lesson-2.5",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "35a923dc-932d-5233-91a9-633fa237e0c8",
+      "canonical_key": "limits-of-autoregression",
+      "title": "The limits of autoregression",
+      "kind": "concept",
+      "hook": "If each word a model generates can be slightly wrong, what happens to the error over a long answer? LeCun thinks it's fatal.",
+      "body": "Autoregressive LLMs generate one token at a time, each conditioned on the last. LeCun argues errors compound across long generations and the approach lacks grounding in a world model — so scaling it alone won't reach human-level intelligence. This is the core of his anti-LLM thesis.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What is LeCun's core objection to autoregressive LLMs?"
+      ],
+      "mastery_criteria": [
+        "Can state the error-accumulation / missing-world-model critique"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#lesson-3.1",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "2be000ec-1aaa-5b90-b080-68d765b3f94d",
+      "canonical_key": "self-supervised-learning",
+      "title": "Self-supervised learning",
+      "kind": "concept",
+      "hook": "Babies don't get labeled data. They learn the world by predicting what comes next — and LeCun thinks machines should too.",
+      "body": "**Self-supervised learning** trains models on unlabeled data by having them predict hidden or future parts of the input, learning rich representations without human labels. LeCun considers it the route to machines that build world models.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "How does self-supervised learning get a training signal without labels?"
+      ],
+      "mastery_criteria": [
+        "Can explain self-supervision via prediction of withheld input"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#lesson-3.2",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "79aeb32e-4219-5d66-81d5-ac123a3a561b",
+      "canonical_key": "autonomous-intelligence-blueprint",
+      "title": "The autonomous intelligence blueprint",
+      "kind": "concept",
+      "hook": "LeCun sketched an actual architecture for a machine that can perceive, predict, plan, and act — not a chatbot. Here's the blueprint.",
+      "body": "LeCun's blueprint for autonomous machine intelligence proposes modular components — perception, a **world model**, a cost/critic, an actor, and a configurator — arranged so the system can predict consequences and *plan* actions, rather than just map inputs to outputs.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What is the role of the world model in LeCun's blueprint?"
+      ],
+      "mastery_criteria": [
+        "Can name the major modules and the perceive-predict-plan-act loop"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#lesson-3.3",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "canonical_key": "jepa",
+      "title": "JEPA",
+      "kind": "concept",
+      "hook": "Predicting every pixel of the future is wasteful and nearly impossible. What if you predict in abstract representation space instead?",
+      "body": "A **Joint Embedding Predictive Architecture (JEPA)** predicts the *representation* of one part of an input from another, in an abstract embedding space rather than reconstructing raw pixels. It is an energy-based, self-supervised approach that learns what matters and ignores unpredictable detail.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What does a JEPA predict, and in what space?"
+      ],
+      "mastery_criteria": [
+        "Can explain prediction in representation space vs pixel reconstruction"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#lesson-3.4",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "c225444a-1c5a-5c9b-9d8d-5255daec8546",
+      "canonical_key": "hierarchical-jepa",
+      "title": "Hierarchical JEPA",
+      "kind": "concept",
+      "hook": "Plans happen at many time scales — 'make coffee' vs 'lift the cup'. A single predictor can't do both. Stack them.",
+      "body": "**Hierarchical JEPA** stacks JEPA predictors at multiple levels of abstraction and time scale, so higher levels plan coarse, long-horizon steps and lower levels fill in fine-grained predictions — enabling hierarchical planning.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Why stack JEPA predictors hierarchically?"
+      ],
+      "mastery_criteria": [
+        "Can explain multi-scale prediction and planning"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#lesson-3.4",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "76c84cfa-1c4e-5176-820d-45123ef23741",
+      "canonical_key": "jepa-model-lineage",
+      "title": "I-JEPA to V-JEPA 2 to LeJEPA",
+      "kind": "concept",
+      "hook": "The bet isn't just theory anymore. There's a growing line of working models.",
+      "body": "The JEPA idea has been instantiated in a lineage of models — I-JEPA (images), V-JEPA 2 (video), and LeJEPA — progressively extending joint-embedding predictive learning to richer modalities and turning the thesis into trainable systems.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "Name two models in the JEPA lineage and their modality."
+      ],
+      "mastery_criteria": [
+        "Can trace the I-JEPA -> V-JEPA 2 -> LeJEPA progression"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#lesson-3.5",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "070686be-ac37-501c-a582-f62d414264fa",
+      "canonical_key": "ami-labs-the-live-bet",
+      "title": "AMI Labs: the live bet",
+      "kind": "concept",
+      "hook": "LeCun left a top industrial lab to actually build this. The contrarian bet is now a live company.",
+      "body": "LeCun's move to pursue autonomous machine intelligence through a dedicated startup (AMI Labs) is the real-world wager: leaving a major lab to chase world-model research the rest of the field is largely not pursuing. It is the present-tense continuation of the 1980s connectionist bet.",
+      "apply_prompt": null,
+      "recall_prompts": [
+        "What is the significance of LeCun starting AMI Labs?"
+      ],
+      "mastery_criteria": [
+        "Can connect the startup to the long-horizon conviction theme"
+      ],
+      "depth_level": "core",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#lesson-3.6",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    },
+    {
+      "id": "741a62a6-479a-5cbf-8b12-06de0d6cbd40",
+      "canonical_key": "apply-llms-vs-world-models-debate",
+      "title": "Defend a position: LLMs vs. world models",
+      "kind": "apply",
+      "hook": "Pick a side and defend it: are LLMs a detour, or is LeCun overconfident? Argue it.",
+      "body": "Course 3 project. A defended position in the 'LLMs vs. world models' debate.",
+      "apply_prompt": "Take and defend a position in the 'LLMs vs. world models' debate. Use the autoregression critique, self-supervised learning, and JEPA as evidence; steelman the opposing view before rebutting it. Assessed on reasoning, not the side you take.",
+      "recall_prompts": [],
+      "mastery_criteria": [
+        "Defends a position with evidence and steelmans the opposition"
+      ],
+      "depth_level": "apply",
+      "embedding": null,
+      "origin": "authored",
+      "locked": true,
+      "source_ref": "lecun/course-3#project",
+      "confidence": 1.0,
+      "version": 1,
+      "quality_signals": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "954b14cc-5562-5d7b-85ef-072924ef1780",
+      "src_node": "ccfe431f-415c-5575-b3ac-60a50326ec38",
+      "dst_node": "45f10d9b-d786-5687-a75d-2bd1b67be8b3",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "57b6e797-a6c2-5407-b63e-be67c108ffbf",
+      "src_node": "45f10d9b-d786-5687-a75d-2bd1b67be8b3",
+      "dst_node": "ca5d83d4-73c4-535d-b064-2f13906c3633",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "17d6d2a9-648e-522a-a930-bb54f1ff010a",
+      "src_node": "ca5d83d4-73c4-535d-b064-2f13906c3633",
+      "dst_node": "2c42d4fe-e646-588b-ab81-65826dd36c2f",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "2cd881a9-c0f2-5e69-980c-59d03a7260c1",
+      "src_node": "2c42d4fe-e646-588b-ab81-65826dd36c2f",
+      "dst_node": "b4db0225-b311-584b-a180-f78074102736",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "8e9de75d-0b5a-5c82-a114-ce0a192d2d8a",
+      "src_node": "b4db0225-b311-584b-a180-f78074102736",
+      "dst_node": "d77f896e-a4cd-5d4e-903e-0d024f3dbbff",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "07df314f-0352-57ef-871a-ffd5391b6d2c",
+      "src_node": "d77f896e-a4cd-5d4e-903e-0d024f3dbbff",
+      "dst_node": "b13d991a-63fc-5f74-a184-64553e4217c0",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "6d1dd325-64ba-5397-94d5-798231577546",
+      "src_node": "b13d991a-63fc-5f74-a184-64553e4217c0",
+      "dst_node": "9ce545f4-84e0-52db-89a7-eba7798e8cdc",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "aa1dbfa2-e824-5ebc-b772-4ee7bd0a27f8",
+      "src_node": "9ce545f4-84e0-52db-89a7-eba7798e8cdc",
+      "dst_node": "4f859f1b-ccf7-58fb-88d0-010beaf0895a",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "a77cac09-14e4-5650-b684-7fc198f5bd75",
+      "src_node": "4f859f1b-ccf7-58fb-88d0-010beaf0895a",
+      "dst_node": "79f6fa9b-a3cb-5a16-9224-4251ec93048a",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "e5854a68-46c5-5dbf-8217-ace91e6d7afc",
+      "src_node": "79f6fa9b-a3cb-5a16-9224-4251ec93048a",
+      "dst_node": "38d25df7-c593-5176-ae86-28af3feed9eb",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "c77a4871-6c9b-5d79-bd26-5f9b030ec14a",
+      "src_node": "38d25df7-c593-5176-ae86-28af3feed9eb",
+      "dst_node": "6e81b7a5-7605-597a-93c9-00b9c99d86bf",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "9285c9bd-2acc-5bf7-bc58-e68f7007e968",
+      "src_node": "a8425814-19cb-5a4c-8c7a-6f3f2653653b",
+      "dst_node": "67cf74e7-6864-527e-a23b-fd3505184632",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "bc460f99-e109-537b-b026-00a6ad5a006a",
+      "src_node": "67cf74e7-6864-527e-a23b-fd3505184632",
+      "dst_node": "87251e29-9905-529d-be37-8e916d2a0f74",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "b6b0facb-f826-5a56-9311-c7dcf372cc53",
+      "src_node": "87251e29-9905-529d-be37-8e916d2a0f74",
+      "dst_node": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "58c82250-f5e4-506b-91c8-e281410101ef",
+      "src_node": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "dst_node": "595997e8-a2d5-5646-ae50-bd09f2d01cf1",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "19061c42-8e10-51c2-9c1f-d9f9f26d5a48",
+      "src_node": "595997e8-a2d5-5646-ae50-bd09f2d01cf1",
+      "dst_node": "b1358792-3745-57cd-a2d8-024e3ed723aa",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "860d99ce-ca45-5606-a15a-79056e89ed01",
+      "src_node": "b1358792-3745-57cd-a2d8-024e3ed723aa",
+      "dst_node": "f8451e41-86b4-545a-8b0d-8c18f4245deb",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "41bd5d05-7799-59f7-9125-37fdaea143aa",
+      "src_node": "f8451e41-86b4-545a-8b0d-8c18f4245deb",
+      "dst_node": "ffb09263-f238-5808-b7e3-2f1c0c8c633e",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "1adf81fd-01fe-52b7-a63f-5e315c6f7f60",
+      "src_node": "ffb09263-f238-5808-b7e3-2f1c0c8c633e",
+      "dst_node": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "78d6b707-cc81-5389-bc15-5e7f1dde58dc",
+      "src_node": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+      "dst_node": "835f9404-8eee-54a6-a8a9-c02213a2afb8",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "de4713c4-55d8-5857-afab-d67c124463be",
+      "src_node": "35a923dc-932d-5233-91a9-633fa237e0c8",
+      "dst_node": "2be000ec-1aaa-5b90-b080-68d765b3f94d",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "ab700c15-9fbe-543d-b7c4-dfd491e9c5c4",
+      "src_node": "2be000ec-1aaa-5b90-b080-68d765b3f94d",
+      "dst_node": "79aeb32e-4219-5d66-81d5-ac123a3a561b",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "16214d52-3de2-5bd3-ba65-b1237324286f",
+      "src_node": "79aeb32e-4219-5d66-81d5-ac123a3a561b",
+      "dst_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "6b8efdd4-c992-5df8-9abf-7b3994cb44ff",
+      "src_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "dst_node": "c225444a-1c5a-5c9b-9d8d-5255daec8546",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "4c8b82eb-6bce-57cc-bcb5-afd94a954492",
+      "src_node": "c225444a-1c5a-5c9b-9d8d-5255daec8546",
+      "dst_node": "76c84cfa-1c4e-5176-820d-45123ef23741",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "30b8d81b-0527-5be5-85e4-1a3aec6b8486",
+      "src_node": "76c84cfa-1c4e-5176-820d-45123ef23741",
+      "dst_node": "070686be-ac37-501c-a582-f62d414264fa",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "a53c5850-9485-532c-a348-1b55edb63d37",
+      "src_node": "070686be-ac37-501c-a582-f62d414264fa",
+      "dst_node": "741a62a6-479a-5cbf-8b12-06de0d6cbd40",
+      "type": "next_in_spine",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "c43099bf-0f87-5e9d-8550-0b559e8f97c0",
+      "src_node": "595997e8-a2d5-5646-ae50-bd09f2d01cf1",
+      "dst_node": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "type": "elaborates",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "e17f26f0-b5e3-5abc-9f8d-08c245a020e6",
+      "src_node": "b1358792-3745-57cd-a2d8-024e3ed723aa",
+      "dst_node": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "type": "elaborates",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "b7f9bd30-a18b-569e-97e5-23da34cba5aa",
+      "src_node": "f8451e41-86b4-545a-8b0d-8c18f4245deb",
+      "dst_node": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "type": "elaborates",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "934b5083-40d3-5c82-b956-45f4a3381138",
+      "src_node": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+      "dst_node": "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+      "type": "applies",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "052183ac-db27-5c6d-8608-5a480c4bdb2f",
+      "src_node": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+      "dst_node": "67cf74e7-6864-527e-a23b-fd3505184632",
+      "type": "applies",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "67e5e097-a048-58b0-b95a-c1961bb7b00b",
+      "src_node": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+      "dst_node": "a8425814-19cb-5a4c-8c7a-6f3f2653653b",
+      "type": "applies",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "754c7f22-d63e-51be-bb80-fecc08044d97",
+      "src_node": "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+      "dst_node": "ffb09263-f238-5808-b7e3-2f1c0c8c633e",
+      "type": "applies",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "ef3fdec4-315b-5f2e-a8fa-0d870f27621c",
+      "src_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "dst_node": "835f9404-8eee-54a6-a8a9-c02213a2afb8",
+      "type": "prerequisite",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "3efa03fc-71b8-56d5-9652-52dbe8580191",
+      "src_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "dst_node": "2be000ec-1aaa-5b90-b080-68d765b3f94d",
+      "type": "prerequisite",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "15989b34-e74d-5896-9378-38f9c609ab4e",
+      "src_node": "c225444a-1c5a-5c9b-9d8d-5255daec8546",
+      "dst_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "type": "prerequisite",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "53b7c92f-1ae7-577e-9b25-c1606c834676",
+      "src_node": "76c84cfa-1c4e-5176-820d-45123ef23741",
+      "dst_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "type": "prerequisite",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "dd48ba39-3a39-55f0-81a4-eca18f4e27ca",
+      "src_node": "45f10d9b-d786-5687-a75d-2bd1b67be8b3",
+      "dst_node": "67cf74e7-6864-527e-a23b-fd3505184632",
+      "type": "rabbit_hole",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "04e77520-64ce-5c10-a0f2-e306e691eea4",
+      "src_node": "38d25df7-c593-5176-ae86-28af3feed9eb",
+      "dst_node": "35a923dc-932d-5233-91a9-633fa237e0c8",
+      "type": "rabbit_hole",
+      "weight": 1.0,
+      "origin": "authored"
+    },
+    {
+      "id": "0b40b2e9-f13b-5097-98c8-da6762f59587",
+      "src_node": "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+      "dst_node": "35a923dc-932d-5233-91a9-633fa237e0c8",
+      "type": "contrasts",
+      "weight": 1.0,
+      "origin": "authored"
+    }
+  ],
+  "spines": [
+    {
+      "id": "71f71028-db4f-5d1e-8484-0a9d9313fd14",
+      "title": "The Conviction",
+      "subject": "Understanding Yann LeCun",
+      "description": "Career, history, temperament — narrative scaffolding for the path.",
+      "origin": "authored",
+      "node_sequence": [
+        "ccfe431f-415c-5575-b3ac-60a50326ec38",
+        "45f10d9b-d786-5687-a75d-2bd1b67be8b3",
+        "ca5d83d4-73c4-535d-b064-2f13906c3633",
+        "2c42d4fe-e646-588b-ab81-65826dd36c2f",
+        "b4db0225-b311-584b-a180-f78074102736",
+        "d77f896e-a4cd-5d4e-903e-0d024f3dbbff",
+        "b13d991a-63fc-5f74-a184-64553e4217c0",
+        "9ce545f4-84e0-52db-89a7-eba7798e8cdc",
+        "4f859f1b-ccf7-58fb-88d0-010beaf0895a",
+        "79f6fa9b-a3cb-5a16-9224-4251ec93048a",
+        "38d25df7-c593-5176-ae86-28af3feed9eb",
+        "6e81b7a5-7605-597a-93c9-00b9c99d86bf"
+      ],
+      "source_ref": "lecun-course/"
+    },
+    {
+      "id": "69f5cb6a-449a-518d-8a5b-6b182a1ac320",
+      "title": "The Foundations",
+      "subject": "Understanding Yann LeCun",
+      "description": "CNNs, backprop, energy-based models — the hands-on technical core.",
+      "origin": "authored",
+      "node_sequence": [
+        "a8425814-19cb-5a4c-8c7a-6f3f2653653b",
+        "67cf74e7-6864-527e-a23b-fd3505184632",
+        "87251e29-9905-529d-be37-8e916d2a0f74",
+        "fe8dd4ff-0bca-5ed2-8d3e-ccd23ef40422",
+        "595997e8-a2d5-5646-ae50-bd09f2d01cf1",
+        "b1358792-3745-57cd-a2d8-024e3ed723aa",
+        "f8451e41-86b4-545a-8b0d-8c18f4245deb",
+        "ffb09263-f238-5808-b7e3-2f1c0c8c633e",
+        "2a3018a8-31f2-51ca-a826-6f56a9e914cb",
+        "835f9404-8eee-54a6-a8a9-c02213a2afb8"
+      ],
+      "source_ref": "lecun-course/"
+    },
+    {
+      "id": "02f4b354-4e70-58c8-bf6f-2f0b6c7c9b35",
+      "title": "The Contrarian Bet",
+      "subject": "Understanding Yann LeCun",
+      "description": "World models, JEPA, the anti-LLM thesis — the frontier.",
+      "origin": "authored",
+      "node_sequence": [
+        "35a923dc-932d-5233-91a9-633fa237e0c8",
+        "2be000ec-1aaa-5b90-b080-68d765b3f94d",
+        "79aeb32e-4219-5d66-81d5-ac123a3a561b",
+        "f2a2d258-2a18-5e79-8a5a-4a3905d7ff3c",
+        "c225444a-1c5a-5c9b-9d8d-5255daec8546",
+        "76c84cfa-1c4e-5176-820d-45123ef23741",
+        "070686be-ac37-501c-a582-f62d414264fa",
+        "741a62a6-479a-5cbf-8b12-06de0d6cbd40"
+      ],
+      "source_ref": "lecun-course/"
+    }
+  ]
+}
