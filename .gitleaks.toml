@@ -1,0 +1,22 @@
+# gitleaks config — extends the default ruleset, with an allowlist for the
+# project's known non-secrets so CI stays green on real findings only.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Authored fixtures, planted test secrets, and example placeholders"
+# Files that legitimately contain secret-shaped strings:
+#  - test_miner.py plants fake API keys to prove the redactor scrubs them
+#  - the LeCun seed's canonical_key values trip the generic-api-key heuristic
+#  - *.env.example ships placeholder values (e.g. change-me)
+paths = [
+  '''backend/app/tests/test_miner\.py''',
+  '''artifacts/lecun_seed_graph\.json''',
+  '''.*\.env\.example$''',
+]
+# Belt-and-braces: never flag obvious placeholder/example tokens anywhere.
+regexes = [
+  '''change-me''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''sk-ant-api-key''',
+]
