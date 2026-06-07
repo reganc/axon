@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from . import db
+from . import bus, db
 from .api.routers import auth, graph, health, ingest, library
 from .api.ws import companion as companion_ws
 from .config import get_settings
@@ -23,14 +23,15 @@ log = logging.getLogger("axon")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not await db.ping():
-        log.warning("database not reachable at startup — fine for the Phase 0 skeleton")
+        log.warning("database not reachable at startup — running without persistence")
     yield
+    await bus.close()
     await db.dispose()
 
 
 def create_app() -> FastAPI:
     s = get_settings()
-    app = FastAPI(title="AXON", version="0.1.0-phase1", lifespan=lifespan)
+    app = FastAPI(title="AXON", version="0.2.0-phase2", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,

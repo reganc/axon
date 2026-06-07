@@ -1,8 +1,7 @@
 """deps.py — the wiring. Provider functions return the concrete implementation
-behind each port. Phase 1 wires identity/content/library/ingestion to real seams;
-learning/companion/llm remain stubs until Phase 2. Routers depend only on these
-providers + the port types, so swapping a stub for a real seam never touches a
-router.
+behind each port. Phases 1–2 wire all six seams to real implementations; routers
+depend only on these providers + the port types, so swapping an implementation
+never touches a router.
 """
 
 from __future__ import annotations
@@ -12,11 +11,12 @@ from functools import lru_cache
 from . import db
 from .config import get_settings
 from .embeddings import Embedder, build_embedder
-from .seams.companion import StubCompanion, StubLLM
+from .seams.companion import Companion
+from .seams.companion.llm import LLMGateway
 from .seams.content import Content
 from .seams.identity import JwtAuth
 from .seams.ingestion import Ingestion
-from .seams.learning import StubLearning
+from .seams.learning import Learning
 from .seams.library import Library
 
 
@@ -45,19 +45,23 @@ def ingestion() -> Ingestion:
     return Ingestion(content=content(), embedder=embedder(), settings=get_settings())
 
 
-# -- Phase 2 stubs (unchanged) --------------------------------------------------
+@lru_cache
+def llm() -> LLMGateway:
+    return LLMGateway(get_settings(), embedder())
 
 
 @lru_cache
-def llm() -> StubLLM:
-    return StubLLM()
+def learning() -> Learning:
+    return Learning(db.session_factory())
 
 
 @lru_cache
-def learning() -> StubLearning:
-    return StubLearning()
-
-
-@lru_cache
-def companion() -> StubCompanion:
-    return StubCompanion(llm=llm(), library=library())
+def companion() -> Companion:
+    return Companion(
+        llm=llm(),
+        library=library(),
+        ingestion=ingestion(),
+        content=content(),
+        learning=learning(),
+        settings=get_settings(),
+    )
