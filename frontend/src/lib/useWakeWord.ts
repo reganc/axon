@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { voiceConfig } from "./config";
 
 // Minimal typing for the Web Speech API (not in the default DOM lib, and only
 // shipped by Chromium browsers behind the webkit prefix). We use it purely as an
@@ -35,9 +36,9 @@ function getCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-// "jarvis" plus the mishears the recognizer most often returns for it.
-const WAKE = /\b(jarvis|jervis|jarvus|jarviss|service)\b/;
-const COOLDOWN_MS = 2500;
+// Accepted wake phrases (default: "jarvis" + its common recognizer mishears),
+// word-boundary matched. Configurable via NEXT_PUBLIC_AXON_WAKE_PHRASE.
+const WAKE = new RegExp(`\\b(${voiceConfig.wake.phrase})\\b`);
 
 /**
  * Listen continuously for the wake word while `enabled`. On a match, fire
@@ -74,7 +75,7 @@ export function useWakeWord(enabled: boolean, onWake: () => void) {
             cooldownRef.current = true;
             setTimeout(() => {
               cooldownRef.current = false;
-            }, COOLDOWN_MS);
+            }, voiceConfig.wake.cooldownMs);
             onWakeRef.current();
             break;
           }
@@ -88,7 +89,8 @@ export function useWakeWord(enabled: boolean, onWake: () => void) {
       rec.onend = () => {
         recRef.current = null;
         setActive(false);
-        if (enabledRef.current) setTimeout(start, 300); // sessions end on their own
+        // Browser ends sessions on its own; restart while still enabled.
+        if (enabledRef.current) setTimeout(start, voiceConfig.wake.restartMs);
       };
       try {
         rec.start();

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { voiceConfig } from "@/lib/config";
 import { useMic } from "@/lib/useMic";
 import { useWakeWord } from "@/lib/useWakeWord";
 import { transcribe } from "@/lib/voice";
@@ -15,9 +16,8 @@ interface Props {
 }
 
 const WAKE_PREF_KEY = "axon.voice.wake";
-// Hands-free capture: stop ~0.9s after the speaker goes quiet, cap at 12s, and
-// bail if nothing is said within 6s of arming.
-const CAPTURE_OPTS = { autoStopSilenceMs: 900, maxMs: 12000, noSpeechMs: 6000 };
+// Hands-free capture thresholds come from config (NEXT_PUBLIC_AXON_VAD_*).
+const CAPTURE_OPTS = voiceConfig.vad;
 
 /** Speaker toggle (TTS), "Hey Jarvis" wake toggle, and a push-to-talk mic. The
  *  wake word arms the same mic capture hands-free. Colors are design tokens. */
