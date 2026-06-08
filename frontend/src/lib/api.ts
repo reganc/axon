@@ -29,6 +29,20 @@ class ApiError extends Error {
   }
 }
 
+/**
+ * Human-readable message for a caught value, preferring the API's `detail`.
+ * `fetch` rejects with a `TypeError` when the host is unreachable — surface that
+ * as an actionable hint rather than a generic fallback, since a dead backend is
+ * the most common cause of an otherwise-mysterious "X failed".
+ */
+export function errorMessage(e: unknown, fallback: string): string {
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof TypeError)
+    return `${fallback}: can't reach the API — is the backend running?`;
+  if (e instanceof Error && e.message) return e.message;
+  return fallback;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers = new Headers(init.headers);

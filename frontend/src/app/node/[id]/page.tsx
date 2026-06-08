@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { getNodeSubgraph, ApiError, type SubgraphDTO } from "@/lib/api";
+import { getNodeSubgraph, errorMessage, type SubgraphDTO } from "@/lib/api";
 import { kindGlyph } from "@/lib/kind";
 import type { EdgeDTO, NodeDTO } from "@/lib/types";
 
@@ -23,7 +23,7 @@ function NodeDetailInner({ nodeId }: { nodeId: string }) {
     setError(null);
     getNodeSubgraph(nodeId)
       .then(setData)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "failed to load node"));
+      .catch((e) => setError(errorMessage(e, "failed to load node")));
   }, [nodeId]);
 
   const focal = data?.nodes.find((n) => n.id === nodeId) ?? null;

@@ -12,7 +12,7 @@ import {
   listNodes,
   listSpines,
   searchNodes,
-  ApiError,
+  errorMessage,
 } from "@/lib/api";
 import { clearSession } from "@/lib/auth";
 import { kindGlyph } from "@/lib/kind";
@@ -36,7 +36,7 @@ function LibraryInner() {
   useEffect(() => {
     listSpines()
       .then(setSpines)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "failed to load spines"));
+      .catch((e) => setError(errorMessage(e, "failed to load spines")));
     listEntryPoints().then(setAnchors).catch(() => {});
     getFacets().then(setFacets).catch(() => {});
     listCheckouts().then(setSessions).catch(() => {});
@@ -60,7 +60,7 @@ function LibraryInner() {
       setResults(hits.map((h) => h.node));
       setResultsLabel(`Results for “${q}”`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "search failed");
+      setError(errorMessage(e, "search failed"));
     } finally {
       setSearching(false);
     }
@@ -72,7 +72,7 @@ function LibraryInner() {
       setResults(await listNodes([kind], 60));
       setResultsLabel(`All ${kind} nodes`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "browse failed");
+      setError(errorMessage(e, "browse failed"));
     } finally {
       setSearching(false);
     }
@@ -91,7 +91,7 @@ function LibraryInner() {
       sessionStorage.setItem(`axon.spine.title.${co.id}`, spine.title);
       router.push(`/learn/${co.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "checkout failed");
+      setError(errorMessage(e, "checkout failed"));
       setBusyId(null);
     }
   };
@@ -103,7 +103,7 @@ function LibraryInner() {
       sessionStorage.setItem(`axon.spine.title.${co.id}`, anchor.title);
       router.push(`/learn/${co.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "checkout failed");
+      setError(errorMessage(e, "checkout failed"));
       setBusyId(null);
     }
   };
