@@ -22,6 +22,11 @@ class Settings(BaseSettings):
         8100  # container-internal bind; host maps via AXON_API_PORT (default 4100)
     )
     cors_origins: list[str] = ["http://localhost:4101", "http://localhost:3000"]
+    # Optional regex of additional allowed origins, for reaching the app over a
+    # LAN / Tailscale IP without pinning each one. Passed to CORSMiddleware's
+    # allow_origin_regex; the specific matched origin is echoed back, so this is
+    # credential-safe (unlike a "*" wildcard). Empty = strict list-only default.
+    cors_origin_regex: str = ""
 
     # data / cache
     database_url: str = "postgresql+asyncpg://axon:axon@db:5432/axon"

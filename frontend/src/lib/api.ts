@@ -14,8 +14,22 @@ import type {
   StreamEvent,
 } from "./types";
 
+// The browser makes every API call, so the API host must be one the *browser*
+// can reach — not the server's `localhost`. Derive it from however the page was
+// reached (localhost, a LAN IP, Tailscale, …) so the app works from any origin
+// without a per-host rebuild. An explicit env override always wins; the port is
+// the backend's AXON_API_PORT (4100), overridable for non-standard setups.
+const API_PORT = process.env.NEXT_PUBLIC_AXON_API_PORT ?? "4100";
+
+function defaultApiBase(): string {
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:${API_PORT}`;
+  }
+  return `http://localhost:${API_PORT}`;
+}
+
 export const API_BASE =
-  process.env.NEXT_PUBLIC_AXON_API_BASE ?? "http://localhost:4100";
+  process.env.NEXT_PUBLIC_AXON_API_BASE ?? defaultApiBase();
 
 export function wsBase(): string {
   return API_BASE.replace(/^http/, "ws");
