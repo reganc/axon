@@ -40,6 +40,10 @@ os.environ["AXON_DATABASE_URL"] = _TEST_DB_URL
 os.environ.setdefault("AXON_OLLAMA_BASE_URL", "http://localhost:11434")
 os.environ.setdefault("AXON_JWT_SECRET", "test-secret-not-for-prod")
 os.environ.setdefault("AXON_DB_USE_NULLPOOL", "true")
+# Deployment behaviour knobs a developer may have in .env (e.g. fast_tier=cloud)
+# must not leak into unit tests that assert code defaults. Scrub them from the
+# test process; tests that exercise a non-default set it explicitly.
+os.environ.pop("AXON_FAST_TIER", None)
 
 import httpx  # noqa: E402
 import sqlalchemy as sa  # noqa: E402
@@ -57,7 +61,17 @@ def _bootstrap_test_db() -> None:
     dsn = DB_URL.replace("postgresql+asyncpg://", "postgresql://")
     db_name = re.match(r".*/([^/?]+)(\?.*)?$", dsn).group(1)
     maint = re.sub(r"/[^/?]+(\?.*)?$", "/postgres", dsn, count=1)
-    schema_path = Path(__file__).resolve().parents[2] / "artifacts" / "schema.sql"
+    # artifacts/ sits beside backend/ in a repo checkout (CI) but is mounted at
+    # /app/artifacts inside the api container — walk up until we find it so the
+    # path is layout-independent.
+    schema_path = next(
+        (
+            p / "artifacts" / "schema.sql"
+            for p in Path(__file__).resolve().parents
+            if (p / "artifacts" / "schema.sql").is_file()
+        ),
+        None,
+    )
 
     async def go() -> None:
         admin = await asyncpg.connect(maint)
@@ -71,7 +85,11 @@ def _bootstrap_test_db() -> None:
         conn = await asyncpg.connect(dsn)
         try:
             empty = await conn.fetchval("SELECT to_regclass('public.canonical_nodes')")
-            if empty is None and schema_path.exists():
+            if empty is None:
+                if schema_path is None:
+                    raise RuntimeError(
+                        "artifacts/schema.sql not found; cannot provision the test DB"
+                    )
                 await conn.execute(schema_path.read_text())
         finally:
             await conn.close()
@@ -81,7 +99,10 @@ def _bootstrap_test_db() -> None:
 
 try:
     _bootstrap_test_db()
-except Exception:  # noqa: BLE001 - server down -> DB tests skip via DB_AVAILABLE
+except OSError:
+    # DB server unreachable (no Postgres in this environment) -> DB tests skip
+    # via DB_AVAILABLE below. A reachable-but-unprovisionable DB raises instead,
+    # so the failure is loud rather than a cascade of "relation does not exist".
     pass
 
 FOUNDATIONS_SPINE_ID = "69f5cb6a-449a-518d-8a5b-6b182a1ac320"
