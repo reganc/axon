@@ -95,6 +95,21 @@ class Settings(BaseSettings):
         True  # route latency-tolerant cloud work through the Batch API
     )
 
+    # voice I/O (self-hosted, no external services): Piper TTS + faster-whisper
+    # STT. Models lazy-load to voice_model_dir (a mounted volume) on first use.
+    # Whisper defaults to CPU/int8 so it never contends with the shared Ollama
+    # model on the host GPU; flip stt_device="cuda" if you have headroom.
+    voice_enabled: bool = True
+    voice_model_dir: str = "/models/voice"
+    tts_voice: str = "en_GB-alan-medium"  # Piper voice: calm British male ~ "Jarvis"
+    tts_piper_bin: str = "/opt/piper/piper"  # standalone binary (set in Dockerfile)
+    tts_length_scale: float = 1.0  # >1 slower/calmer, <1 faster
+    stt_model: str = "base.en"  # faster-whisper size: tiny.en|base.en|small.en
+    stt_device: str = "cpu"  # "cpu" | "cuda"
+    stt_compute_type: str = "int8"  # "int8" (cpu) | "float16" (cuda)
+    stt_beam_size: int = 1
+    stt_language: str = "en"
+
 
 @lru_cache
 def get_settings() -> Settings:

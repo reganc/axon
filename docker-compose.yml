@@ -44,6 +44,8 @@ services:
     depends_on:
       db: { condition: service_healthy }
       cache: { condition: service_healthy }
+    volumes:
+      - voice_models:/models/voice   # Piper + Whisper model cache (AXON_VOICE_MODEL_DIR)
     networks: [axon_net]
 
 networks:
@@ -54,3 +56,4 @@ networks:
 
 volumes:
   dbdata:
+  voice_models:
