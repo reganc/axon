@@ -295,6 +295,24 @@ def scripted_handler(plan: list[str], confidence: float = 0.8):
                     }
                 )
             return json.dumps({"new_concept": False})
+        if "TASK: find_media" in user:
+            # A mix of resolvable ("good") and dead ("bad") candidates so tests can
+            # assert the validation gate drops the bad ones.
+            return json.dumps(
+                {
+                    "videos": [
+                        "https://www.youtube.com/watch?v=GOODvid",
+                        "https://www.youtube.com/watch?v=BADvid",
+                    ],
+                    "links": [
+                        {"title": "Good ref", "url": "https://good.example/ref"},
+                        {"title": "Dead ref", "url": "https://bad.example/404"},
+                    ],
+                    "images": ["https://good.example/pic.png"],
+                }
+            )
+        if "TASK: diagram" in user:
+            return "graph TD; A[Input] --> B[Conv]; B --> C[Pool]"
         if "TASK: materials" in user:
             concept = _between(user, "Concept:", "\n") or "concept"
             return json.dumps(

@@ -138,6 +138,12 @@ export function useCompanionStream(
     },
     [send, setBusy],
   );
+  // Visual aids load in the background — no busy flag (it shouldn't block the deck
+  // or the deep-dive; media just streams into the card when it's ready).
+  const requestMedia = useCallback(
+    (nodeId: string) => send({ type: "request_media", node_id: nodeId }),
+    [send],
+  );
 
   return {
     connected,
@@ -149,5 +155,6 @@ export function useCompanionStream(
     exploreQuestion,
     explain,
     discuss,
+    requestMedia,
   };
 }

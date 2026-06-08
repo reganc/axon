@@ -212,6 +212,7 @@ class StreamEvent(BaseModel):
         "say",
         "ask",
         "discuss",
+        "media",
         "node.create",
         "node.update",
         "edge.create",
@@ -279,6 +280,9 @@ class CompanionPort(Protocol):
     ) -> AsyncIterator[StreamEvent]: ...
     def discuss(
         self, checkout_id: UUID, node_id: UUID, message: str
+    ) -> AsyncIterator[StreamEvent]: ...
+    def enrich(
+        self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]: ...
 
 

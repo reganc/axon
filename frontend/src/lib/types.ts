@@ -40,6 +40,13 @@ export interface NodeDTO {
   attributes?: Record<string, unknown>;
 }
 
+// A small neighborhood of the graph around one node, for the card's mini-graph.
+export interface NeighborGraph {
+  anchor: string;
+  nodes: { id: string; title: string; kind: string }[];
+  edges: { src: string; dst: string; type: string }[];
+}
+
 export interface SpineWithNodes {
   id: string;
   title: string;
@@ -91,6 +98,19 @@ export type StreamEvent =
       type: "discuss";
       data: { node_id: string; role: "learner" | "tutor"; text: string };
     }
+  // A validated visual aid pinned to a card: a video/link/image, a generated
+  // Mermaid diagram, or a neighbor mini-graph.
+  | {
+      type: "media";
+      data: {
+        node_id: string;
+        media_kind: "video" | "link" | "image" | "diagram" | "graph";
+        url?: string;
+        title?: string;
+        mermaid?: string;
+        graph?: NeighborGraph;
+      };
+    }
   | { type: "node.create"; data: { temp_id: string; node: Partial<NodeDTO>; reused?: boolean } }
   | {
       type: "node.update";
@@ -109,4 +129,5 @@ export type ClientMessage =
   | { type: "explore_question"; node_id: string }
   | { type: "explain"; node_id: string }
   | { type: "discuss"; node_id: string; text: string }
+  | { type: "request_media"; node_id: string }
   | { type: "close" };

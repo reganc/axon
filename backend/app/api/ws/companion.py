@@ -9,6 +9,7 @@ checkout belongs to the caller, then runs a bidirectional loop:
                      {type: pull_thread, node_id}      spawn a rabbit-hole
                      {type: explain, node_id}          deep-dive a selected card
                      {type: discuss, node_id, text}    node-scoped follow-up chat
+                     {type: request_media, node_id}    visual aids for a card
                      {type: close}                     end
   server -> client : StreamEvent JSON (say/ask/node.create/node.update/...)
 
@@ -65,7 +66,8 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
     cid = checkout_id
     inbox: asyncio.Queue = asyncio.Queue()
     turn: asyncio.Task | None = None
-    aux: asyncio.Task | None = None  # deep-dive stream; cancelled when superseded
+    aux: asyncio.Task | None = None  # deep-dive / discuss; cancelled when superseded
+    media: asyncio.Task | None = None  # enrichment stream; its own cancellable slot
 
     async def stream(agen) -> None:
         async for ev in agen:
@@ -110,6 +112,15 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
                         )
                     )
                 )
+            elif kind == "request_media":
+                # Visual aids for a card (diagram, neighbor graph, web media). Its
+                # own cancellable slot so it can run alongside a deep-dive/chat and
+                # not be cancelled by them.
+                if media and not media.done():
+                    media.cancel()
+                media = asyncio.create_task(
+                    stream(companion().enrich(cid, msg.get("node_id")))
+                )
             elif kind == "close":
                 break
             else:
@@ -121,7 +132,7 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
     except WebSocketDisconnect:
         pass
     finally:
-        for task in (turn, aux):
+        for task in (turn, aux, media):
             if task and not task.done():
                 task.cancel()
         await _safe_close(ws)

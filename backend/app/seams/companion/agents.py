@@ -22,6 +22,8 @@ __all__ = [
     "Researcher",
     "Elaborator",
     "Conversationalist",
+    "MediaScout",
+    "Diagrammer",
     "parse_json",
 ]
 
@@ -362,3 +364,105 @@ class Conversationalist:
             source_ref=f"companion/discuss/{node.id}",
             confidence=0.5,
         )
+
+
+class MediaScout:
+    """Propose real external visual aids for a concept (tier=fast).
+
+    Runs on the fast gateway *specifically* because that lane injects web search
+    (SearXNG) — so candidate URLs are drawn from the live web, not invented from
+    weights. They are still unverified here; the caller resolves each one through
+    `media_validation` before anything reaches the learner.
+    """
+
+    def __init__(self, llm: LLMPort, settings: Settings | None = None) -> None:
+        self._llm = llm
+        self._s = settings or get_settings()
+
+    async def find(self, node: Node, *, checkout_id=None, user_id=None) -> dict:
+        msgs = [
+            Msg(
+                role="system",
+                content=(
+                    "You are AXON's media scout. Using web search, find the single "
+                    "best explainer video, a couple of authoritative reference links, "
+                    "and one illustrative image for a concept. Prefer well-known "
+                    "sources (Wikipedia, university pages, reputable YouTube channels). "
+                    "Return only real URLs you actually found — never invent one."
+                ),
+            ),
+            Msg(
+                role="user",
+                content=(
+                    f"TASK: find_media\nConcept: {node.title}\n"
+                    f"Context: {node.hook or node.body or ''}\n"
+                    'Return JSON only: {"videos": ["https://youtube..."], '
+                    '"links": [{"title": "...", "url": "https://..."}], '
+                    '"images": ["https://...png"]}. Omit anything you cannot find.'
+                ),
+            ),
+        ]
+        data = parse_json(
+            await self._llm.complete(
+                msgs, "fast", task="media", checkout_id=checkout_id, user_id=user_id
+            )
+        )
+        if not isinstance(data, dict):
+            return {"videos": [], "links": [], "images": []}
+        return {
+            "videos": [str(u) for u in (data.get("videos") or []) if u][:3],
+            "links": [
+                {"title": str(x.get("title") or x.get("url") or ""), "url": str(x.get("url") or "")}
+                for x in (data.get("links") or [])
+                if isinstance(x, dict) and x.get("url")
+            ][:5],
+            "images": [str(u) for u in (data.get("images") or []) if u][:3],
+        }
+
+
+class Diagrammer:
+    """Author a single Mermaid diagram for a concept (tier=fast).
+
+    Returns the raw Mermaid source (no code fences, no prose); the caller gates it
+    through `validate_mermaid` so malformed output never reaches the renderer.
+    """
+
+    def __init__(self, llm: LLMPort, settings: Settings | None = None) -> None:
+        self._llm = llm
+        self._s = settings or get_settings()
+
+    async def diagram(self, node: Node, *, checkout_id=None, user_id=None) -> str:
+        msgs = [
+            Msg(
+                role="system",
+                content=(
+                    "You draw one small Mermaid diagram that captures the structure "
+                    "of a concept (a flowchart of its parts/flow, or a relationship "
+                    "graph). Output ONLY valid Mermaid source — start with a diagram "
+                    "declaration like 'graph TD'. No code fences, no commentary, keep "
+                    "it to a handful of nodes."
+                ),
+            ),
+            Msg(
+                role="user",
+                content=(
+                    f"TASK: diagram\nConcept: {node.title}\n"
+                    f"Notes: {node.hook or node.body or ''}\n"
+                    "Return the Mermaid source only."
+                ),
+            ),
+        ]
+        text = await self._llm.complete(
+            msgs, "fast", task="media", checkout_id=checkout_id, user_id=user_id
+        )
+        return _strip_code_fence(text)
+
+
+def _strip_code_fence(text: str) -> str:
+    """Drop a surrounding ```mermaid ... ``` fence if the model added one."""
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.split("\n", 1)[-1] if "\n" in t else ""
+        if t.endswith("```"):
+            t = t[: -3]
+    return t.strip()

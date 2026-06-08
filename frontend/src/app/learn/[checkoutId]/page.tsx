@@ -64,6 +64,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     exploreQuestion,
     explain,
     discuss,
+    requestMedia,
   } = useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
 
   useEffect(() => {
@@ -182,6 +183,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
           onExplore={onExplore}
           onDeepDive={explain}
           onDiscuss={discuss}
+          onRequestMedia={requestMedia}
         />
       )}
     </div>

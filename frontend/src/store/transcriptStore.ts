@@ -1,10 +1,44 @@
 import { create } from "zustand";
-import type { StreamEvent } from "@/lib/types";
+import type { NeighborGraph, StreamEvent } from "@/lib/types";
 
 export interface TMessage {
   id: string;
   kind: "say" | "status";
   text: string;
+}
+
+export type MediaItem =
+  | { kind: "video"; url: string }
+  | { kind: "link"; url: string; title?: string }
+  | { kind: "image"; url: string }
+  | { kind: "diagram"; mermaid: string }
+  | { kind: "graph"; graph: NeighborGraph };
+
+/** A stable signature so replayed media (from the durable log) doesn't duplicate. */
+function mediaKey(m: MediaItem): string {
+  if (m.kind === "diagram") return `diagram:${m.mermaid}`;
+  if (m.kind === "graph") return `graph:${m.graph.anchor}`;
+  return `${m.kind}:${m.url}`;
+}
+
+type MediaData = Extract<StreamEvent, { type: "media" }>["data"];
+
+/** Map a `media` event payload to a typed MediaItem, dropping malformed ones. */
+function toMediaItem(d: MediaData): MediaItem | null {
+  switch (d.media_kind) {
+    case "video":
+      return d.url ? { kind: "video", url: d.url } : null;
+    case "link":
+      return d.url ? { kind: "link", url: d.url, title: d.title } : null;
+    case "image":
+      return d.url ? { kind: "image", url: d.url } : null;
+    case "diagram":
+      return d.mermaid ? { kind: "diagram", mermaid: d.mermaid } : null;
+    case "graph":
+      return d.graph ? { kind: "graph", graph: d.graph } : null;
+    default:
+      return null;
+  }
 }
 
 export interface AskState {
@@ -28,6 +62,8 @@ interface TranscriptState {
   // The back-and-forth follow-up chat per node id. Once a discussion starts for a
   // card, the Tutor's `say` lines append here as bubbles instead of the intro.
   discussions: Record<string, DiscussTurn[]>;
+  // Validated visual aids per node id (video/link/image/diagram/mini-graph).
+  media: Record<string, MediaItem[]>;
   init: (checkoutId: string) => void;
   setBusy: (busy: boolean) => void;
   apply: (ev: StreamEvent) => void;
@@ -46,6 +82,7 @@ function persist(state: TranscriptState) {
       ask: state.ask,
       deepDives: state.deepDives,
       discussions: state.discussions,
+      media: state.media,
     }),
   );
 }
@@ -55,6 +92,7 @@ type Restored = {
   ask: AskState | null;
   deepDives?: Record<string, string>;
   discussions?: Record<string, DiscussTurn[]>;
+  media?: Record<string, MediaItem[]>;
 };
 
 export const useTranscriptStore = create<TranscriptState>((set, get) => ({
@@ -64,6 +102,7 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
   busy: false,
   deepDives: {},
   discussions: {},
+  media: {},
 
   init: (checkoutId) => {
     let restored: Restored = { messages: [], ask: null, deepDives: {} };
@@ -83,6 +122,7 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
       ask: restored.ask ?? null,
       deepDives: restored.deepDives ?? {},
       discussions: restored.discussions ?? {},
+      media: restored.media ?? {},
       busy: false,
     });
   },
@@ -96,6 +136,15 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
         const id = ev.data.node_id;
         const thread = [...(s.discussions[id] ?? []), { role: ev.data.role, text: ev.data.text }];
         return { discussions: { ...s.discussions, [id]: thread } };
+      }
+      if (ev.type === "media") {
+        const item = toMediaItem(ev.data);
+        if (!item) return s;
+        const id = ev.data.node_id;
+        const list = s.media[id] ?? [];
+        // Replay (durable log) re-emits media; don't duplicate it.
+        if (list.some((m) => mediaKey(m) === mediaKey(item))) return s;
+        return { media: { ...s.media, [id]: [...list, item] } };
       }
       if (ev.type === "say") {
         const message: TMessage = { id: `m${seq++}`, kind: "say", text: ev.data.text };
@@ -154,6 +203,13 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
   reset: () => {
     const id = get().checkoutId;
     if (typeof window !== "undefined" && id) sessionStorage.removeItem(key(id));
-    set({ messages: [], ask: null, busy: false, deepDives: {}, discussions: {} });
+    set({
+      messages: [],
+      ask: null,
+      busy: false,
+      deepDives: {},
+      discussions: {},
+      media: {},
+    });
   },
 }));

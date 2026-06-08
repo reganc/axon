@@ -228,6 +228,51 @@ async def test_discuss_new_concept_accretes_a_linked_card(seeded, seams):
     assert events[-1].type == "done"
 
 
+async def test_enrich_emits_only_validated_media(seeded, seams, monkeypatch):
+    """The visual layer: a neighbor mini-graph (from the canonical graph), a
+    generated diagram (real Mermaid gate), and real web media — with every
+    external reference resolved first, so dead/fabricated URLs are dropped."""
+    from app.seams.companion import media_validation as mv
+
+    async def yt(url, **_):
+        return "GOOD" in url
+
+    async def good_host(url, **_):
+        return "good." in url
+
+    monkeypatch.setattr(mv, "validate_youtube", yt)
+    monkeypatch.setattr(mv, "validate_link", good_host)
+    monkeypatch.setattr(mv, "validate_image", good_host)
+
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "visuals")
+
+    events = [e async for e in comp.enrich(checkout.id, node.id)]
+    media = [e for e in events if e.type == "media"]
+    kinds = {e.data["media_kind"] for e in media}
+
+    # neighbor mini-graph straight from the graph, with edges
+    assert "graph" in kinds
+    graph = next(e for e in media if e.data["media_kind"] == "graph")
+    assert graph.data["graph"]["edges"]
+    # generated diagram cleared the mermaid syntax gate
+    assert "diagram" in kinds
+    # only resolvable web media survived (the BAD/dead ones were dropped)
+    assert [e.data["url"] for e in media if e.data["media_kind"] == "video"] == [
+        "https://www.youtube.com/watch?v=GOODvid"
+    ]
+    assert [e.data["url"] for e in media if e.data["media_kind"] == "link"] == [
+        "https://good.example/ref"
+    ]
+    assert [e.data["url"] for e in media if e.data["media_kind"] == "image"] == [
+        "https://good.example/pic.png"
+    ]
+    # enrichment is a background side-channel: it streams media, never a turn
+    # terminator (`done`) that would clear the shared busy flag.
+    assert not any(e.type == "done" for e in events)
+
+
 async def test_explain_node_strips_citation_markers(seeded, seams):
     from app.seams.companion import _flush_sentences, _sanitize
 

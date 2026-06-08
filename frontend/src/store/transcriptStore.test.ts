@@ -104,3 +104,45 @@ describe("transcriptStore discussion threading", () => {
     expect(discussions.b).toEqual([{ role: "learner", text: "about b" }]);
   });
 });
+
+describe("transcriptStore media routing", () => {
+  beforeEach(() => {
+    useTranscriptStore.getState().init("test-checkout");
+    useTranscriptStore.getState().reset();
+    useTranscriptStore.setState({ checkoutId: "test-checkout" });
+  });
+
+  const media = (
+    nodeId: string,
+    d: Record<string, unknown>,
+  ): StreamEvent => ({ type: "media", data: { node_id: nodeId, ...d } } as StreamEvent);
+
+  it("collects typed media items per node id", () => {
+    const { apply } = useTranscriptStore.getState();
+    apply(media("n1", { media_kind: "video", url: "https://youtu.be/x" }));
+    apply(media("n1", { media_kind: "link", url: "https://w.org", title: "Wiki" }));
+    apply(media("n1", { media_kind: "diagram", mermaid: "graph TD; A-->B" }));
+
+    const items = useTranscriptStore.getState().media.n1;
+    expect(items).toEqual([
+      { kind: "video", url: "https://youtu.be/x" },
+      { kind: "link", url: "https://w.org", title: "Wiki" },
+      { kind: "diagram", mermaid: "graph TD; A-->B" },
+    ]);
+  });
+
+  it("drops malformed media payloads", () => {
+    const { apply } = useTranscriptStore.getState();
+    apply(media("n1", { media_kind: "video" })); // no url
+    apply(media("n1", { media_kind: "diagram" })); // no mermaid
+    expect(useTranscriptStore.getState().media.n1).toBeUndefined();
+  });
+
+  it("de-duplicates replayed media (durable-log re-emit)", () => {
+    const { apply } = useTranscriptStore.getState();
+    const ev = media("n1", { media_kind: "video", url: "https://youtu.be/x" });
+    apply(ev);
+    apply(ev); // replay on reconnect must not duplicate
+    expect(useTranscriptStore.getState().media.n1).toHaveLength(1);
+  });
+});

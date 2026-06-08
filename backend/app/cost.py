@@ -34,6 +34,7 @@ TaskKind = Literal[
     "narration",
     "ask",
     "discuss",  # node-scoped follow-up chat
+    "media",  # find/diagram visual aids (needs the gateway's web search)
     "recall",
     "embed",
     "draft",
@@ -48,7 +49,19 @@ TaskKind = Literal[
 
 Tier = Literal["local", "cloud"]
 
-_LOCAL_TASKS = {"narration", "ask", "discuss", "recall", "embed", "draft", "hook"}
+# `media` is local-only on purpose: it relies on the gateway's injected web
+# search, which the cloud (Anthropic) tier doesn't have — so it never joins
+# _FAST_CHAT_TASKS (which would redirect it to the cloud when fast_tier=cloud).
+_LOCAL_TASKS = {
+    "narration",
+    "ask",
+    "discuss",
+    "media",
+    "recall",
+    "embed",
+    "draft",
+    "hook",
+}
 _ESCALATABLE = {"draft", "hook"}  # a weak local draft may earn a cloud pass
 # Fast-tier *chat* tasks: redirected to the cheap cloud model when
 # settings.fast_tier == "cloud". Excludes embed (always Ollama) and recall

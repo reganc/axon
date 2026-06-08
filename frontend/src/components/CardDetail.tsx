@@ -4,6 +4,7 @@ import { kindGlyph } from "@/lib/kind";
 import { ctaAria, ctaLabel } from "@/lib/prompts";
 import { type GNode, useGraphStore } from "@/store/graphStore";
 import { useTranscriptStore } from "@/store/transcriptStore";
+import { MediaPanel } from "./MediaPanel";
 
 interface Props {
   nodeId: string;
@@ -13,6 +14,8 @@ interface Props {
   onDeepDive: (nodeId: string) => void;
   /** Ask a node-scoped follow-up — keeps the conversation on this card. */
   onDiscuss: (nodeId: string, text: string) => void;
+  /** Pull up visual aids (video, diagram, links, mini-graph) for this card. */
+  onRequestMedia: (nodeId: string) => void;
 }
 
 /** Focused reader for one card. Opening it asks the companion for a streamed,
@@ -21,14 +24,23 @@ interface Props {
  *  follow-up about *this* card and the companion answers in place — and when an
  *  answer surfaces a genuinely new concept it lands as a fresh card in the deck.
  *  A lightbox over the deck — close on Esc/backdrop. */
-export function CardDetail({ nodeId, onClose, onExplore, onDeepDive, onDiscuss }: Props) {
+export function CardDetail({
+  nodeId,
+  onClose,
+  onExplore,
+  onDeepDive,
+  onDiscuss,
+  onRequestMedia,
+}: Props) {
   const node = useGraphStore((s) => s.nodes[nodeId]);
   const deepDive = useTranscriptStore((s) => s.deepDives[nodeId]);
   const thread = useTranscriptStore((s) => s.discussions[nodeId]);
+  const media = useTranscriptStore((s) => s.media[nodeId]);
   const busy = useTranscriptStore((s) => s.busy);
   const [revealed, setRevealed] = useState(false);
   const [followUp, setFollowUp] = useState("");
   const requested = useRef<Set<string>>(new Set());
+  const mediaRequested = useRef<Set<string>>(new Set());
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setRevealed(false), [nodeId]);
@@ -47,6 +59,15 @@ export function CardDetail({ nodeId, onClose, onExplore, onDeepDive, onDiscuss }
     requested.current.add(nodeId);
     onDeepDive(nodeId);
   }, [nodeId, node, isQuestion, deepDive, onDeepDive]);
+
+  // On open, pull up visual aids once per card (unless we already have them, or
+  // the card is still building / is a question seed).
+  useEffect(() => {
+    if (!node || isQuestion || node.optimistic) return;
+    if ((media && media.length > 0) || mediaRequested.current.has(nodeId)) return;
+    mediaRequested.current.add(nodeId);
+    onRequestMedia(nodeId);
+  }, [nodeId, node, isQuestion, media, onRequestMedia]);
 
   // Keep the newest turn in view as the answer streams in.
   useEffect(() => {
@@ -125,6 +146,8 @@ export function CardDetail({ nodeId, onClose, onExplore, onDeepDive, onDiscuss }
               ))}
           </section>
         )}
+
+        {!isQuestion && <MediaPanel items={media} />}
 
         {!isQuestion && (
           <section className="mt-5 border-t border-border pt-4" aria-label="Discussion">

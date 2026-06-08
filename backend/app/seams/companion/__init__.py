@@ -24,9 +24,12 @@ from uuid import UUID, uuid4
 from ...config import Settings, get_settings
 from ...ports import CandidateNode, InteractionEvent, Node, StreamEvent
 from ..ingestion import normalize_key
+from . import media_validation as mv
 from .agents import (
     Conversationalist,
+    Diagrammer,
     Elaborator,
+    MediaScout,
     NodeGenerator,
     Planner,
     Researcher,
@@ -90,6 +93,7 @@ def _node_payload(node: Node) -> dict:
         "origin": node.origin,
         "confidence": node.confidence,
         "locked": node.locked,
+        "attributes": node.attributes,
     }
 
 
@@ -101,6 +105,21 @@ def _candidate_payload(c: CandidateNode) -> dict:
         "body": c.body,
         "origin": c.origin,
     }
+
+
+def _neighbor_graph(anchor_id: UUID, sub) -> dict:
+    """A compact, render-ready neighborhood for the card's mini-graph, capped so
+    the payload stays small even for a richly connected node."""
+    nodes = [
+        {"id": str(n.id), "title": n.title, "kind": n.kind} for n in sub.nodes[:13]
+    ]
+    keep = {n["id"] for n in nodes}
+    edges = [
+        {"src": str(e.src_node), "dst": str(e.dst_node), "type": e.type}
+        for e in sub.edges
+        if str(e.src_node) in keep and str(e.dst_node) in keep
+    ][:24]
+    return {"anchor": str(anchor_id), "nodes": nodes, "edges": edges}
 
 
 def _edge_event(edge) -> StreamEvent:
@@ -139,6 +158,8 @@ class Companion:
         self._researcher = Researcher(llm, self._s)
         self._elaborator = Elaborator(llm, self._s)
         self._conversationalist = Conversationalist(llm, self._s)
+        self._media_scout = MediaScout(llm, self._s)
+        self._diagrammer = Diagrammer(llm, self._s)
 
     # -- main loop ------------------------------------------------------------
 
@@ -465,6 +486,64 @@ class Companion:
                 )
             )
         yield _ev("done")
+
+    async def enrich(
+        self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]:
+        """Surface visual aids for a card — the visual layer. Emits `media` events
+        (each recorded in the durable log, so they replay on reconnect):
+
+        1. a neighbor mini-graph drawn straight from the canonical graph (no LLM);
+        2. a generated Mermaid diagram of the concept's structure;
+        3. real web media (an explainer video, reference links, an image) found via
+           the gateway's web search.
+
+        Every external reference is resolved (`media_validation`) before it reaches
+        the learner — a dead or fabricated URL is dropped, not rendered.
+        """
+        cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
+        owner = await self._library.checkout_owner(cid)
+        sub = await self._content.get_subgraph([nid], depth=1)
+        node = next((n for n in sub.nodes if n.id == nid), None)
+        if node is None:
+            return
+        # No `status`/`done` here on purpose: enrichment is a background side-channel
+        # that streams `media` events into the open card. Emitting `done` would clear
+        # the shared `busy` flag and cut a concurrent deep-dive's "thinking" cue short.
+
+        # 1) neighbor mini-graph (canonical, no model call)
+        graph = _neighbor_graph(nid, sub)
+        if graph["edges"]:
+            yield _ev("media", node_id=str(nid), media_kind="graph", graph=graph)
+
+        # 2) generated structural diagram, gated on valid Mermaid syntax
+        mermaid = await self._diagrammer.diagram(node, checkout_id=cid, user_id=owner)
+        if mv.validate_mermaid(mermaid):
+            yield _ev("media", node_id=str(nid), media_kind="diagram", mermaid=mermaid)
+
+        # 3) real web media — each candidate resolved before it's surfaced
+        found = await self._media_scout.find(node, checkout_id=cid, user_id=owner)
+        for url in found["videos"]:
+            if await mv.validate_youtube(url):
+                yield _ev("media", node_id=str(nid), media_kind="video", url=url)
+        for link in found["links"]:
+            if await mv.validate_link(link["url"]):
+                yield _ev(
+                    "media",
+                    node_id=str(nid),
+                    media_kind="link",
+                    url=link["url"],
+                    title=link["title"],
+                )
+        for url in found["images"]:
+            if await mv.validate_image(url):
+                yield _ev("media", node_id=str(nid), media_kind="image", url=url)
+
+        await self._learning.record(
+            InteractionEvent(
+                checkout_id=cid, node_id=nid, event_type="enriched", payload={}
+            )
+        )
 
     async def _discussion_history(self, cid: UUID, nid: UUID) -> list[dict]:
         """Reconstruct this card's prior turns from the durable conversation log:
