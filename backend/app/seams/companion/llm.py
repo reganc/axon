@@ -72,7 +72,9 @@ class GatewayChat:
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
 
-    async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
+    async def stream(
+        self, msgs: list[Msg], *, model: str | None = None
+    ) -> AsyncIterator[str]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
@@ -118,10 +120,15 @@ class AnthropicChat:
         )
         return "".join(b.text for b in resp.content if b.type == "text")
 
-    async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
+    async def stream(
+        self, msgs: list[Msg], *, model: str | None = None
+    ) -> AsyncIterator[str]:
         system, rest = self._split(msgs)
         async with self._client.messages.stream(
-            model=self.model, max_tokens=self.max_tokens, system=system, messages=rest
+            model=model or self.model,
+            max_tokens=self.max_tokens,
+            system=system,
+            messages=rest,
         ) as stream:
             async for text in stream.text_stream:
                 yield text
@@ -137,7 +144,9 @@ class FakeLLM:
     async def complete(self, msgs: list[Msg], *, model: str | None = None) -> str:
         return self._handler(msgs)
 
-    async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
+    async def stream(
+        self, msgs: list[Msg], *, model: str | None = None
+    ) -> AsyncIterator[str]:
         for word in self._handler(msgs).split(" "):
             yield word + " "
 
@@ -246,9 +255,19 @@ class LLMGateway:
         return result
 
     async def stream(self, msgs: list[Msg], tier: Tier) -> AsyncIterator[str]:
+        # The streaming path (narration / deep-dive explanations) has no task
+        # router, so honor fast_tier here: when "cloud", stream the fast tier from
+        # the cheap model instead of the slow local gateway.
         backend = self._backend(tier)
+        model: str | None = None
+        if (
+            tier == "fast"
+            and self._s.fast_tier == "cloud"
+            and self._anthropic is not None
+        ):
+            backend, model = self._anthropic, self._s.model_cheap
         try:
-            async for chunk in backend.stream(msgs):
+            async for chunk in backend.stream(msgs, model=model):
                 yield chunk
         except Exception as exc:  # noqa: BLE001
             log.warning(

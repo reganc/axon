@@ -92,6 +92,21 @@ async def test_complete_honors_routed_model_for_cloud_task():
     assert spy.models == ["claude-haiku-4-5"]  # routed Haiku, not the Sonnet default
 
 
+def test_fast_tier_cloud_redirects_fast_chat_to_cheap_model():
+    # default: fast tier is local (free 14B)
+    local = RoutingPolicy(Settings())
+    assert local.route("draft").tier == "local"
+    assert local.route("narration").tier == "local"
+
+    # opt-in: fast chat tasks run on the cheap cloud model instead
+    cloud = RoutingPolicy(Settings(fast_tier="cloud"))
+    assert cloud.route("draft").tier == "cloud"
+    assert "haiku" in cloud.route("draft").model
+    assert "haiku" in cloud.route("narration").model
+    # embeddings must never leave Ollama, regardless of fast_tier
+    assert cloud.route("embed").tier == "local"
+
+
 def test_draft_escalates_only_below_floor():
     r = RoutingPolicy(Settings(escalate_floor=0.6))
     assert r.route("draft", confidence=0.9).tier == "local"

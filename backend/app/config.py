@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     model_reason: str = "claude-sonnet-4-6"  # accuracy-critical cloud reasoning
     model_cheap: str = "claude-haiku-4-5"  # cheap cloud tasks (extract/classify/plan)
     model_ground: str = "claude-haiku-4-5"  # research grounding — Haiku is plenty
+    # Where the fast tier (node drafts + streamed narration/explanations) runs.
+    # "local" = the shared 14B gateway (free, ~24s/draft). "cloud" = model_cheap
+    # (Haiku, ~2s) — far faster at trivial cost; requires an Anthropic key. The
+    # budget breaker still degrades cloud fast-work to local when over budget.
+    fast_tier: str = "local"  # "local" | "cloud"
     escalate_floor: float = (
         0.6  # local draft below this confidence -> escalate to cloud
     )
