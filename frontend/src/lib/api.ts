@@ -1,5 +1,5 @@
 // The single place `fetch` is used. All backend HTTP goes through here.
-import { getToken } from "./auth";
+import { getToken, clearSession } from "./auth";
 import type {
   Checkout,
   CheckoutSummary,
@@ -50,6 +50,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (res.status === 401 && typeof window !== "undefined") {
+    // Stale/expired/invalid token: drop it and bounce to login rather than
+    // stranding the user on a guarded page where every call 401s. AuthGuard
+    // only checks token *presence*, so it can't recover from a bad token alone.
+    clearSession();
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login";
+    }
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
