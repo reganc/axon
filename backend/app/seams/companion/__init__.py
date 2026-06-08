@@ -29,16 +29,31 @@ from .llm import FakeLLM, GatewayChat, LLMGateway  # noqa: F401  (re-exported)
 
 log = logging.getLogger("axon.companion")
 
-# The fast gateway injects web-search/RAG context and leaves citation markers like
-# [W2] / [L1] in prose. Strip them (plus stray markdown emphasis) before narration.
-_CITATION = re.compile(r"\[[A-Za-z]?\d+\]")
-_EMPHASIS = re.compile(r"[*_]{1,2}")
+# The fast gateway injects web-search/RAG context and leaves markup in prose:
+# citation markers ([W2]/[L1]), markdown links, emphasis/inline-code ticks, and
+# list/heading leaders. Piper voices any leftover symbol literally — that, plus
+# doubled spaces and a space before punctuation, is what makes narration sound
+# garbled. Strip it all and normalize whitespace before the text reaches TTS.
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")  # [label](url) -> label
+_CITATION = re.compile(r"\[[A-Za-z]?\d+\]")  # [W2], [L1], [3]
+_LIST_LEAD = re.compile(r"(?m)^[ \t]*(?:[-*+•>]+|#{1,6})[ \t]+")  # bullets/headings
+_EMPHASIS = re.compile(r"[*_`]{1,3}")  # bold / italic / inline-code ticks
+_WS = re.compile(r"\s+")  # collapse runs of whitespace (incl. newlines)
+_SPACE_PUNCT = re.compile(r" +([.,!?;:])")  # drop the space before punctuation
 # A sentence boundary: terminal punctuation followed by whitespace.
 _SENTENCE = re.compile(r"(.+?[.!?])(\s+)", re.DOTALL)
 
 
 def _sanitize(text: str) -> str:
-    return _EMPHASIS.sub("", _CITATION.sub("", text))
+    """Strip gateway/markdown markup and normalize whitespace so the TTS voice
+    never tries to pronounce a stray symbol (the usual cause of garbled audio)."""
+    text = _MD_LINK.sub(r"\1", text)
+    text = _CITATION.sub("", text)
+    text = _LIST_LEAD.sub("", text)
+    text = _EMPHASIS.sub("", text)
+    text = _WS.sub(" ", text)
+    text = _SPACE_PUNCT.sub(r"\1", text)
+    return text.strip()
 
 
 def _flush_sentences(buf: str) -> tuple[str, list[str]]:

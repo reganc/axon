@@ -181,9 +181,17 @@ async def test_explain_node_streams_and_persists_materials(seeded, seams):
 async def test_explain_node_strips_citation_markers(seeded, seams):
     from app.seams.companion import _flush_sentences, _sanitize
 
+    # Citation markers go, and the whitespace they leave behind is normalized so
+    # Piper doesn't pause oddly or read a stray symbol (garbled-audio cause).
     assert _sanitize("Backprop is the chain rule [W2] in disguise [L1].") == (
-        "Backprop is the chain rule  in disguise ."
+        "Backprop is the chain rule in disguise."
     )
+    # Markdown links keep only their label; emphasis/code ticks and list/heading
+    # leaders are stripped entirely.
+    assert _sanitize("See [the paper](http://x.y) for **more** `detail`.") == (
+        "See the paper for more detail."
+    )
+    assert _sanitize("# Heading\n- a bullet point") == "Heading a bullet point"
     remaining, sentences = _flush_sentences("One sentence. A second one. tail")
     assert sentences == ["One sentence.", "A second one."]
     assert remaining.strip() == "tail"

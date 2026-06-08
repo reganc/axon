@@ -120,7 +120,7 @@ class Settings(BaseSettings):
     voice_model_dir: str = "/models/voice"
     tts_voice: str = "en_US-ryan-medium"  # Piper voice: natural American male
     tts_piper_bin: str = "/opt/piper/piper"  # standalone binary (set in Dockerfile)
-    tts_length_scale: float = 0.85  # >1 slower/calmer, <1 faster (brisker cadence)
+    tts_length_scale: float = 0.95  # >1 slower/calmer, <1 faster; <0.9 slurs words
     stt_model: str = "base.en"  # faster-whisper size: tiny.en|base.en|small.en
     stt_device: str = "cpu"  # "cpu" | "cuda"
     stt_compute_type: str = "int8"  # "int8" (cpu) | "float16" (cuda)
