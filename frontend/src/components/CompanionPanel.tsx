@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { VoiceControls } from "@/components/VoiceControls";
+import { stopSpeaking } from "@/lib/voice";
 import { useTranscriptStore } from "@/store/transcriptStore";
 
 interface Props {
@@ -7,12 +9,22 @@ interface Props {
   onSubject: (text: string) => void;
   onAnswer: (text: string) => void;
   onInterrupt: (text: string) => void;
+  speakEnabled: boolean;
+  onToggleSpeak: () => void;
 }
 
 /** Chat-style companion: `say`/`status` render as bubbles, an `ask` pauses the
- *  flow and shows quick-reply chips; the input sends answer / interrupt / subject
- *  depending on state. (Voice tier 1 = streamed text; TTS is a later tier.) */
-export function CompanionPanel({ connected, onSubject, onAnswer, onInterrupt }: Props) {
+ *  flow and shows quick-reply chips; text or voice both route to answer /
+ *  interrupt / subject depending on state. Voice: Jarvis speaks `say` events,
+ *  the mic transcribes the learner back into the same routing. */
+export function CompanionPanel({
+  connected,
+  onSubject,
+  onAnswer,
+  onInterrupt,
+  speakEnabled,
+  onToggleSpeak,
+}: Props) {
   const messages = useTranscriptStore((s) => s.messages);
   const ask = useTranscriptStore((s) => s.ask);
   const busy = useTranscriptStore((s) => s.busy);
@@ -23,12 +35,17 @@ export function CompanionPanel({ connected, onSubject, onAnswer, onInterrupt }: 
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, ask]);
 
+  // Route a finished utterance (typed or spoken) by conversation state.
+  const route = (value: string) => {
+    const v = value.trim();
+    if (!v) return;
+    if (ask) onAnswer(v);
+    else if (busy) onInterrupt(v);
+    else onSubject(v);
+  };
+
   const submit = () => {
-    const value = text.trim();
-    if (!value) return;
-    if (ask) onAnswer(value);
-    else if (busy) onInterrupt(value);
-    else onSubject(value);
+    route(text);
     setText("");
   };
 
@@ -36,9 +53,17 @@ export function CompanionPanel({ connected, onSubject, onAnswer, onInterrupt }: 
     <div className="flex h-full flex-col border-l border-border bg-surface">
       <div className="flex items-center justify-between border-b border-border px-4 py-2 text-sm">
         <span className="font-medium text-fg">Companion</span>
-        <span className={connected ? "text-accent" : "text-muted"}>
-          {connected ? "● live" : "○ offline"}
-        </span>
+        <div className="flex items-center gap-2">
+          <VoiceControls
+            speakEnabled={speakEnabled}
+            onToggleSpeak={onToggleSpeak}
+            onText={route}
+            onListenStart={stopSpeaking}
+          />
+          <span className={connected ? "text-accent" : "text-muted"}>
+            {connected ? "● live" : "○ offline"}
+          </span>
+        </div>
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto p-3">

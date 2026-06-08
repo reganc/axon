@@ -14,7 +14,10 @@ const GRAPH_EVENTS = new Set(["node.create", "node.update", "edge.create"]);
  * because both stores persist per checkout (sessionStorage) — so the canvas and
  * transcript are restored, not lost.
  */
-export function useCompanionStream(checkoutId: string) {
+export function useCompanionStream(
+  checkoutId: string,
+  onSay?: (text: string) => void,
+) {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const closedRef = useRef(false);
@@ -23,6 +26,10 @@ export function useCompanionStream(checkoutId: string) {
   const applyGraph = useGraphStore((s) => s.apply);
   const applyTranscript = useTranscriptStore((s) => s.apply);
   const setBusy = useTranscriptStore((s) => s.setBusy);
+
+  // Keep the latest onSay without re-subscribing the socket when it changes.
+  const onSayRef = useRef(onSay);
+  onSayRef.current = onSay;
 
   useEffect(() => {
     closedRef.current = false;
@@ -43,6 +50,9 @@ export function useCompanionStream(checkoutId: string) {
         }
         if (GRAPH_EVENTS.has(ev.type)) applyGraph(ev);
         else applyTranscript(ev);
+        // Speak live narration only (replay/restore goes through the store path,
+        // never here — so resuming a session doesn't re-read the whole history).
+        if (ev.type === "say") onSayRef.current?.(ev.data.text);
       };
       ws.onclose = () => {
         setConnected(false);

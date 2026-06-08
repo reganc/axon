@@ -9,15 +9,37 @@ import { NodeView } from "@/components/NodeView";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getConversation, getSpine } from "@/lib/api";
 import { useCompanionStream } from "@/lib/useCompanionStream";
+import { speak, stopSpeaking } from "@/lib/voice";
 import { useGraphStore } from "@/store/graphStore";
 import { useTranscriptStore } from "@/store/transcriptStore";
+
+const VOICE_PREF_KEY = "axon.voice.speak";
 
 function LearnInner({ checkoutId }: { checkoutId: string }) {
   const initGraph = useGraphStore((s) => s.init);
   const initTranscript = useTranscriptStore((s) => s.init);
   const [title, setTitle] = useState<string | null>(null);
+  const [speakEnabled, setSpeakEnabled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setSpeakEnabled(localStorage.getItem(VOICE_PREF_KEY) === "on");
+    }
+  }, []);
+
+  const toggleSpeak = () => {
+    setSpeakEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem(VOICE_PREF_KEY, next ? "on" : "off");
+      }
+      if (!next) stopSpeaking();
+      return next;
+    });
+  };
+
   const { connected, sendSubject, answer, interrupt, pullThread, exploreQuestion } =
-    useCompanionStream(checkoutId);
+    useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -84,6 +106,8 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
               onSubject={sendSubject}
               onAnswer={answer}
               onInterrupt={interrupt}
+              speakEnabled={speakEnabled}
+              onToggleSpeak={toggleSpeak}
             />
           </div>
         </aside>
