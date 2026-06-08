@@ -17,7 +17,7 @@ test("check out lands on the learning canvas", async ({ page }) => {
 
 test("search opens a node-detail page with relationships", async ({ page }) => {
   await login(page);
-  await page.getByPlaceholder("Search the graph…").fill("convolution");
+  await page.getByPlaceholder("Search existing cards…").fill("convolution");
   await page.getByRole("button", { name: "Search" }).click();
   const firstResult = page.locator('a[href^="/node/"]').first();
   await expect(firstResult).toBeVisible();

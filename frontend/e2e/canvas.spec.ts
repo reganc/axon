@@ -32,7 +32,7 @@ test("opening a card reveals hook then body and offers a go-deeper CTA", async (
   await checkoutFoundations(page);
   await page.getByRole("button", { name: /^Open / }).first().click();
   const dialog = page.getByRole("dialog");
-  const reveal = dialog.getByRole("button", { name: "Reveal explanation" });
+  const reveal = dialog.getByRole("button", { name: "Show the notes" });
   await expect(reveal).toBeVisible();
   await reveal.click();
   // The CTA copy rotates, but its accessible name is stable.
