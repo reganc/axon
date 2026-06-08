@@ -27,6 +27,10 @@ function LibraryInner() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // "ask anything" — start a fresh spine-less session on an arbitrary subject
+  const [topic, setTopic] = useState("");
+  const [starting, setStarting] = useState(false);
+
   // search / browse-results overlay
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<NodeDTO[] | null>(null);
@@ -96,6 +100,22 @@ function LibraryInner() {
     }
   };
 
+  const askAnything = async () => {
+    const t = topic.trim();
+    if (!t) return;
+    setStarting(true);
+    try {
+      // No spine: a free subject the companion plans + generates live, reusing
+      // existing cards on a strong match and creating new ones for the gaps.
+      const co = await createCheckout(null, t);
+      sessionStorage.setItem(`axon.spine.title.${co.id}`, t);
+      router.push(`/learn/${co.id}`);
+    } catch (e) {
+      setError(errorMessage(e, "couldn't start a session"));
+      setStarting(false);
+    }
+  };
+
   const startFromAnchor = async (anchor: NodeDTO) => {
     setBusyId(anchor.id);
     try {
@@ -131,12 +151,40 @@ function LibraryInner() {
         </div>
       </header>
 
+      <section className="mb-6 rounded-xl border border-accent bg-surface p-4" aria-label="Ask anything">
+        <label htmlFor="ask-anything" className="block text-sm font-medium text-fg">
+          Ask anything
+        </label>
+        <p className="mb-2 text-xs text-muted">
+          Start a fresh session on any topic — the companion generates new cards
+          for anything the library doesn&apos;t already cover.
+        </p>
+        <div className="flex gap-2">
+          <input
+            id="ask-anything"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && askAnything()}
+            placeholder="Teach me about…"
+            className="flex-1 rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+          />
+          <button
+            type="button"
+            onClick={askAnything}
+            disabled={starting || !topic.trim()}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
+          >
+            {starting ? "Starting…" : "Ask →"}
+          </button>
+        </div>
+      </section>
+
       <div className="mb-6 flex gap-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && runSearch()}
-          placeholder="Search the graph…"
+          placeholder="Search existing cards…"
           className="flex-1 rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
         />
         <button
