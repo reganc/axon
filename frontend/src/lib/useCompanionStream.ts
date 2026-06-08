@@ -14,18 +14,37 @@ const GRAPH_EVENTS = new Set(["node.create", "node.update", "edge.create"]);
  * because both stores persist per checkout (sessionStorage) — so the canvas and
  * transcript are restored, not lost.
  */
-export function useCompanionStream(checkoutId: string) {
+export function useCompanionStream(
+  checkoutId: string,
+  onSay?: (text: string) => void,
+) {
   const [connected, setConnected] = useState(false);
+  const [fatal, setFatal] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const closedRef = useRef(false);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 1008 = policy violation (bad/expired token, or the checkout no longer
+  // exists). Permanent for this checkout — stop reconnecting and surface it,
+  // rather than hammering a dead session forever.
+  const WS_POLICY_VIOLATION = 1008;
 
   const applyGraph = useGraphStore((s) => s.apply);
   const applyTranscript = useTranscriptStore((s) => s.apply);
   const setBusy = useTranscriptStore((s) => s.setBusy);
 
+  // Keep the latest onSay without re-subscribing the socket when it changes.
+  const onSayRef = useRef(onSay);
+  onSayRef.current = onSay;
+
   useEffect(() => {
     closedRef.current = false;
+
+    const fail = (reason: string) => {
+      closedRef.current = true; // stop the reconnect loop
+      setConnected(false);
+      setFatal(reason);
+    };
 
     const connect = () => {
       const token = getToken();
@@ -35,17 +54,33 @@ export function useCompanionStream(checkoutId: string) {
 
       ws.onopen = () => setConnected(true);
       ws.onmessage = (e) => {
-        let ev: StreamEvent;
+        let parsed: { type: string; data?: Record<string, unknown> };
         try {
-          ev = JSON.parse(e.data) as StreamEvent;
+          parsed = JSON.parse(e.data);
         } catch {
           return;
         }
+        if (parsed.type === "error") {
+          const reason =
+            typeof parsed.data?.reason === "string"
+              ? parsed.data.reason
+              : "This session is no longer available.";
+          fail(reason);
+          return;
+        }
+        const ev = parsed as StreamEvent;
         if (GRAPH_EVENTS.has(ev.type)) applyGraph(ev);
         else applyTranscript(ev);
+        // Speak live narration only (replay/restore goes through the store path,
+        // never here — so resuming a session doesn't re-read the whole history).
+        if (ev.type === "say") onSayRef.current?.(ev.data.text);
       };
-      ws.onclose = () => {
+      ws.onclose = (e) => {
         setConnected(false);
+        if (e.code === WS_POLICY_VIOLATION) {
+          fail("This session is no longer available.");
+          return;
+        }
         if (!closedRef.current) {
           retryRef.current = setTimeout(connect, 1500); // resubscribe; stores persist
         }
@@ -89,6 +124,22 @@ export function useCompanionStream(checkoutId: string) {
     },
     [send, setBusy],
   );
+  const explain = useCallback(
+    (nodeId: string) => {
+      setBusy(true);
+      send({ type: "explain", node_id: nodeId });
+    },
+    [send, setBusy],
+  );
 
-  return { connected, sendSubject, answer, interrupt, pullThread, exploreQuestion };
+  return {
+    connected,
+    fatal,
+    sendSubject,
+    answer,
+    interrupt,
+    pullThread,
+    exploreQuestion,
+    explain,
+  };
 }

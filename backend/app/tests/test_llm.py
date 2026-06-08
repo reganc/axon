@@ -6,11 +6,18 @@ from app.config import Settings
 from app.embeddings import DeterministicEmbedder
 from app.ports import Msg
 from app.seams.companion.agents import parse_json
-from app.seams.companion.llm import FakeLLM, LLMGateway
+from app.seams.companion.llm import FakeLLM, LLMGateway, _sse_delta
 
 
 def _offline_settings() -> Settings:
-    return Settings(ollama_base_url="", anthropic_api_key="", anthropic_model="")
+    # Clear every chat backend so the gateway must fall back to the FakeLLM —
+    # llm_base_url drives the fast tier (ollama_base_url is embeddings only).
+    return Settings(
+        llm_base_url="",
+        ollama_base_url="",
+        anthropic_api_key="",
+        anthropic_model="",
+    )
 
 
 async def test_fake_complete_and_stream():
@@ -35,6 +42,17 @@ async def test_gateway_embed_uses_embedder():
     gw = LLMGateway(_offline_settings(), DeterministicEmbedder(768))
     vec = await gw.embed("abc")
     assert len(vec) == 768
+
+
+def test_sse_delta_skips_non_delta_lines():
+    # well-formed content delta
+    assert _sse_delta('{"choices":[{"delta":{"content":"hi"}}]}') == "hi"
+    # the gateway's interleaved metadata lines must be skipped, not fatal
+    assert _sse_delta('{"type":"search_results","results":[]}') is None
+    assert _sse_delta('{"usage":{"total_tokens":42}}') is None
+    assert _sse_delta('{"choices":[]}') is None
+    assert _sse_delta("not json") is None
+    assert _sse_delta('{"choices":[{"delta":{}}]}') is None  # role-only opener
 
 
 def test_parse_json_tolerates_fences_and_prose():

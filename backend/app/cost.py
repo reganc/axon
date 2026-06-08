@@ -49,14 +49,21 @@ Tier = Literal["local", "cloud"]
 
 _LOCAL_TASKS = {"narration", "ask", "recall", "embed", "draft", "hook"}
 _ESCALATABLE = {"draft", "hook"}  # a weak local draft may earn a cloud pass
-# cloud task -> (uses_cheap_model, batchable)
-_CLOUD_TASKS: dict[str, tuple[bool, bool]] = {
-    "extract": (True, True),
-    "classify": (True, False),
-    "curate": (True, True),
-    "plan": (False, False),
-    "merge_judgment": (False, False),
-    "ground": (False, True),
+# Fast-tier *chat* tasks: redirected to the cheap cloud model when
+# settings.fast_tier == "cloud". Excludes embed (always Ollama) and recall
+# (scheduling, not an LLM chat call).
+_FAST_CHAT_TASKS = {"narration", "ask", "draft", "hook"}
+# cloud task -> (settings field holding the model id, batchable). Each task names
+# its own model so cheap/structuring work (extract/classify/curate/plan) and
+# research grounding run on Haiku, while merge_judgment — which permanently
+# shapes the canonical graph — stays on the strong reasoning model.
+_CLOUD_TASKS: dict[str, tuple[str, bool]] = {
+    "extract": ("model_cheap", True),
+    "classify": ("model_cheap", False),
+    "curate": ("model_cheap", True),
+    "plan": ("model_cheap", False),
+    "ground": ("model_ground", True),
+    "merge_judgment": ("model_reason", False),
 }
 
 # Representative $/Mtok (input, output) — mid-2026 order of magnitude; the policy
@@ -115,9 +122,13 @@ class RoutingPolicy:
                 and confidence < self._s.escalate_floor
             ):
                 return Routed(tier="cloud", model=self._s.model_reason, batch=False)
+            # Opt-in: run the fast tier on the cheap cloud model instead of the
+            # slow local 14B. The budget breaker still degrades this to local.
+            if self._s.fast_tier == "cloud" and task in _FAST_CHAT_TASKS:
+                return Routed(tier="cloud", model=self._s.model_cheap, batch=False)
             return Routed(tier="local", model=None, batch=False)
-        cheap, batchable = _CLOUD_TASKS[task]
-        model = self._s.model_cheap if cheap else self._s.model_reason
+        model_field, batchable = _CLOUD_TASKS[task]
+        model = getattr(self._s, model_field)
         return Routed(
             tier="cloud", model=model, batch=batchable and self._s.batch_enabled
         )

@@ -16,16 +16,42 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from collections import deque
 from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
 from ...config import Settings, get_settings
 from ...ports import CandidateNode, InteractionEvent, Node, StreamEvent
 from ..ingestion import normalize_key
-from .agents import NodeGenerator, Planner, Researcher
+from .agents import Elaborator, NodeGenerator, Planner, Researcher
 from .llm import FakeLLM, GatewayChat, LLMGateway  # noqa: F401  (re-exported)
 
 log = logging.getLogger("axon.companion")
+
+# The fast gateway injects web-search/RAG context and leaves citation markers like
+# [W2] / [L1] in prose. Strip them (plus stray markdown emphasis) before narration.
+_CITATION = re.compile(r"\[[A-Za-z]?\d+\]")
+_EMPHASIS = re.compile(r"[*_]{1,2}")
+# A sentence boundary: terminal punctuation followed by whitespace.
+_SENTENCE = re.compile(r"(.+?[.!?])(\s+)", re.DOTALL)
+
+
+def _sanitize(text: str) -> str:
+    return _EMPHASIS.sub("", _CITATION.sub("", text))
+
+
+def _flush_sentences(buf: str) -> tuple[str, list[str]]:
+    """Pull complete sentences out of a streaming buffer so narration is emitted
+    (and spoken) sentence-by-sentence. Returns (remaining_buffer, sentences)."""
+    out: list[str] = []
+    last = 0
+    for m in _SENTENCE.finditer(buf):
+        s = _sanitize(m.group(1)).strip()
+        if s:
+            out.append(s)
+        last = m.end()
+    return buf[last:], out
 
 
 def _ev(type_: str, **data) -> StreamEvent:
@@ -49,7 +75,7 @@ def _node_payload(node: Node) -> dict:
 def _candidate_payload(c: CandidateNode) -> dict:
     return {
         "title": c.title,
-        "kind": "concept",
+        "kind": c.kind,
         "hook": c.hook,
         "body": c.body,
         "origin": c.origin,
@@ -78,6 +104,7 @@ class Companion:
         self._planner = Planner(llm, self._s)
         self._generator = NodeGenerator(llm)
         self._researcher = Researcher(llm, self._s)
+        self._elaborator = Elaborator(llm, self._s)
 
     # -- main loop ------------------------------------------------------------
 
@@ -89,49 +116,94 @@ class Companion:
         yield _ev("status", phase="planning", detail="checking the library…")
         plan = await self._planner.plan(message, checkout_id=cid, user_id=owner)
 
+        # Materialize a few upcoming nodes concurrently (each is a local draft
+        # then a cloud grounding pass) while emitting strictly in plan order, so
+        # one node's grounding overlaps the next's drafting instead of running the
+        # whole pipeline serially. Interrupts still swap only the *current* step
+        # and leave the rest of the plan intact, matching the serial behaviour.
+        width = max(1, self._s.companion_generate_concurrency)
+        upcoming = iter(plan)
+        pending: deque[tuple[str, asyncio.Task]] = deque()
+        inflight: set[asyncio.Task] = set()
+
+        def _launch(title: str) -> asyncio.Task:
+            task = asyncio.create_task(
+                self._materialize(cid, title, message, user_id=owner)
+            )
+            inflight.add(task)
+            return task
+
+        def _fill() -> None:
+            while len(pending) < width:
+                nxt = next(upcoming, None)
+                if nxt is None:
+                    return
+                pending.append((nxt, _launch(nxt)))
+
         prev_id: UUID | None = None
         produced = 0
-        for title in plan:
-            barge = _drain(inbox)
-            if barge and barge.get("type") == "interrupt":
-                title = (barge.get("text") or title).strip()
-                yield _ev("say", text=f"Sure — let's switch to {title}.")
-            elif barge and barge.get("type") == "answer":
+        try:
+            _fill()
+            while pending:
+                barge = _drain(inbox)
+                if barge and barge.get("type") == "interrupt":
+                    redirect = (barge.get("text") or "").strip()
+                    if redirect:
+                        # Swap just the head; its speculative draft is abandoned
+                        # (cancelling rolls back any in-progress canonicalize).
+                        _old_title, old_task = pending.popleft()
+                        old_task.cancel()
+                        pending.appendleft((redirect, _launch(redirect)))
+                        yield _ev("say", text=f"Sure — let's switch to {redirect}.")
+                elif barge and barge.get("type") == "answer":
+                    await self._learning.record(
+                        InteractionEvent(
+                            checkout_id=cid,
+                            node_id=prev_id,
+                            event_type="explained_back",
+                            payload={"text": barge.get("text", "")},
+                        )
+                    )
+
+                title, task = pending.popleft()
+                yield _ev("status", phase="step", detail=title)
+                node, events = await task
+                inflight.discard(task)
+                for e in events:
+                    yield e
+
+                if prev_id is not None and prev_id != node.id:
+                    edge = await self._content.add_edge(
+                        prev_id, node.id, "next_in_spine", origin="ai_generated"
+                    )
+                    yield _ev(
+                        "edge.create",
+                        edge={
+                            "id": str(edge.id),
+                            "src_node": str(edge.src_node),
+                            "dst_node": str(edge.dst_node),
+                            "type": edge.type,
+                        },
+                    )
+
                 await self._learning.record(
                     InteractionEvent(
                         checkout_id=cid,
-                        node_id=prev_id,
-                        event_type="explained_back",
-                        payload={"text": barge.get("text", "")},
+                        node_id=node.id,
+                        event_type="viewed",
+                        payload={},
                     )
                 )
-
-            yield _ev("status", phase="step", detail=title)
-            node, events = await self._materialize(cid, title, message, user_id=owner)
-            for e in events:
-                yield e
-
-            if prev_id is not None and prev_id != node.id:
-                edge = await self._content.add_edge(
-                    prev_id, node.id, "next_in_spine", origin="ai_generated"
-                )
-                yield _ev(
-                    "edge.create",
-                    edge={
-                        "id": str(edge.id),
-                        "src_node": str(edge.src_node),
-                        "dst_node": str(edge.dst_node),
-                        "type": edge.type,
-                    },
-                )
-
-            await self._learning.record(
-                InteractionEvent(
-                    checkout_id=cid, node_id=node.id, event_type="viewed", payload={}
-                )
-            )
-            prev_id = node.id
-            produced += 1
+                prev_id = node.id
+                produced += 1
+                _fill()
+        finally:
+            # Abandoned (interrupt) and not-yet-consumed (early disconnect) drafts:
+            # cancel and drain so their transactions roll back cleanly.
+            for task in inflight:
+                task.cancel()
+            if inflight:
+                await asyncio.gather(*inflight, return_exceptions=True)
 
         await self._library.merge_companion_memory(
             cid, {"last_subject": message, "nodes_produced": produced}
@@ -223,6 +295,68 @@ class Companion:
             produced += 1
         yield _ev("done", nodes=produced)
 
+    async def explain_node(
+        self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]:
+        """Deep-dive on an existing card: stream a conversational explanation of
+        the node itself (ephemeral talk), then generate study materials that
+        persist into the library (a key-points summary, an analogy, follow-ups).
+
+        `say` events for the explanation carry `node_id` so the frontend can pin
+        the narration to the card that was opened.
+        """
+        cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
+        owner = await self._library.checkout_owner(cid)
+        node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
+        yield _ev("status", phase="explaining", detail=node.title)
+
+        # 1) streamed explanation — flush whole sentences so TTS reads naturally.
+        buf = ""
+        async for chunk in self._elaborator.explain(node):
+            buf += chunk
+            buf, sentences = _flush_sentences(buf)
+            for s in sentences:
+                yield _ev("say", text=s, node_id=str(nid))
+        tail = _sanitize(buf).strip()
+        if tail:
+            yield _ev("say", text=tail, node_id=str(nid))
+
+        # 2) study materials -> persist through the canonicalize chokepoint, each
+        # linked back to the source node so they replay and grow the graph.
+        yield _ev("status", phase="materials", detail="capturing key points…")
+        materials = await self._elaborator.materials(
+            node, checkout_id=cid, user_id=owner
+        )
+        produced = 0
+        for candidate in materials:
+            mat, events = await self._persist_candidate(candidate)
+            for e in events:
+                yield e
+            if mat.id != nid:
+                # material -> source: a question is *about* the concept; a summary
+                # or analogy *elaborates* it.
+                edge_type = "about" if candidate.kind == "question" else "elaborates"
+                edge = await self._content.add_edge(
+                    mat.id, nid, edge_type, origin="ai_generated"
+                )
+                yield _ev(
+                    "edge.create",
+                    edge={
+                        "id": str(edge.id),
+                        "src_node": str(edge.src_node),
+                        "dst_node": str(edge.dst_node),
+                        "type": edge.type,
+                    },
+                )
+            produced += 1
+
+        await self._learning.record(
+            InteractionEvent(
+                checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
+            )
+        )
+        yield _ev("done", nodes=produced)
+
     # -- per-step: reuse or generate -----------------------------------------
 
     async def _materialize(
@@ -267,12 +401,21 @@ class Companion:
         candidate = await self._researcher.ground(
             candidate, checkout_id=checkout_id, user_id=user_id
         )
-        temp_id = str(uuid4())
         events.append(_ev("say", text=f"Here's a new idea: {title}."))
+        node, persist_events = await self._persist_candidate(candidate)
+        events.extend(persist_events)
+        return node, events
+
+    async def _persist_candidate(
+        self, candidate: CandidateNode
+    ) -> tuple[Node, list[StreamEvent]]:
+        """Optimistic render -> canonicalize -> reconcile. The single path every
+        generated artifact takes into the library (the canonicalize chokepoint)."""
+        events: list[StreamEvent] = []
+        temp_id = str(uuid4())
         events.append(
             _ev("node.create", temp_id=temp_id, node=_candidate_payload(candidate))
         )
-
         result = await self._ingestion.canonicalize(candidate)
         node = result.node
         flagged = node.confidence < self._s.companion_confidence_floor

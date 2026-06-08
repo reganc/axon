@@ -7,23 +7,29 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createCheckout,
   getFacets,
+  listCheckouts,
   listEntryPoints,
   listNodes,
   listSpines,
   searchNodes,
-  ApiError,
+  errorMessage,
 } from "@/lib/api";
 import { clearSession } from "@/lib/auth";
 import { kindGlyph } from "@/lib/kind";
-import type { Facets, NodeDTO, SpineSummary } from "@/lib/types";
+import type { CheckoutSummary, Facets, NodeDTO, SpineSummary } from "@/lib/types";
 
 function LibraryInner() {
   const router = useRouter();
   const [spines, setSpines] = useState<SpineSummary[] | null>(null);
   const [anchors, setAnchors] = useState<NodeDTO[]>([]);
   const [facets, setFacets] = useState<Facets | null>(null);
+  const [sessions, setSessions] = useState<CheckoutSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // "ask anything" — start a fresh spine-less session on an arbitrary subject
+  const [topic, setTopic] = useState("");
+  const [starting, setStarting] = useState(false);
 
   // search / browse-results overlay
   const [query, setQuery] = useState("");
@@ -34,10 +40,20 @@ function LibraryInner() {
   useEffect(() => {
     listSpines()
       .then(setSpines)
-      .catch((e) => setError(e instanceof ApiError ? e.message : "failed to load spines"));
+      .catch((e) => setError(errorMessage(e, "failed to load spines")));
     listEntryPoints().then(setAnchors).catch(() => {});
     getFacets().then(setFacets).catch(() => {});
+    listCheckouts().then(setSessions).catch(() => {});
   }, []);
+
+  const resume = (s: CheckoutSummary) => {
+    if (s.spine_id) sessionStorage.setItem(`axon.spine.${s.id}`, s.spine_id);
+    sessionStorage.setItem(
+      `axon.spine.title.${s.id}`,
+      s.spine_title ?? s.subject ?? "Session",
+    );
+    router.push(`/learn/${s.id}`);
+  };
 
   const runSearch = async () => {
     const q = query.trim();
@@ -48,7 +64,7 @@ function LibraryInner() {
       setResults(hits.map((h) => h.node));
       setResultsLabel(`Results for “${q}”`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "search failed");
+      setError(errorMessage(e, "search failed"));
     } finally {
       setSearching(false);
     }
@@ -60,7 +76,7 @@ function LibraryInner() {
       setResults(await listNodes([kind], 60));
       setResultsLabel(`All ${kind} nodes`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "browse failed");
+      setError(errorMessage(e, "browse failed"));
     } finally {
       setSearching(false);
     }
@@ -79,8 +95,24 @@ function LibraryInner() {
       sessionStorage.setItem(`axon.spine.title.${co.id}`, spine.title);
       router.push(`/learn/${co.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "checkout failed");
+      setError(errorMessage(e, "checkout failed"));
       setBusyId(null);
+    }
+  };
+
+  const askAnything = async () => {
+    const t = topic.trim();
+    if (!t) return;
+    setStarting(true);
+    try {
+      // No spine: a free subject the companion plans + generates live, reusing
+      // existing cards on a strong match and creating new ones for the gaps.
+      const co = await createCheckout(null, t);
+      sessionStorage.setItem(`axon.spine.title.${co.id}`, t);
+      router.push(`/learn/${co.id}`);
+    } catch (e) {
+      setError(errorMessage(e, "couldn't start a session"));
+      setStarting(false);
     }
   };
 
@@ -91,7 +123,7 @@ function LibraryInner() {
       sessionStorage.setItem(`axon.spine.title.${co.id}`, anchor.title);
       router.push(`/learn/${co.id}`);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "checkout failed");
+      setError(errorMessage(e, "checkout failed"));
       setBusyId(null);
     }
   };
@@ -119,12 +151,40 @@ function LibraryInner() {
         </div>
       </header>
 
+      <section className="mb-6 rounded-xl border border-accent bg-surface p-4" aria-label="Ask anything">
+        <label htmlFor="ask-anything" className="block text-sm font-medium text-fg">
+          Ask anything
+        </label>
+        <p className="mb-2 text-xs text-muted">
+          Start a fresh session on any topic — the companion generates new cards
+          for anything the library doesn&apos;t already cover.
+        </p>
+        <div className="flex gap-2">
+          <input
+            id="ask-anything"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && askAnything()}
+            placeholder="Teach me about…"
+            className="flex-1 rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+          />
+          <button
+            type="button"
+            onClick={askAnything}
+            disabled={starting || !topic.trim()}
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-fg disabled:opacity-50"
+          >
+            {starting ? "Starting…" : "Ask →"}
+          </button>
+        </div>
+      </section>
+
       <div className="mb-6 flex gap-2">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && runSearch()}
-          placeholder="Search the graph…"
+          placeholder="Search existing cards…"
           className="flex-1 rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg outline-none focus:border-accent"
         />
         <button
@@ -172,6 +232,34 @@ function LibraryInner() {
       ) : (
         <>
           {!spines && <p className="text-sm text-muted">Loading…</p>}
+
+          {sessions.length > 0 && (
+            <section className="mb-10" aria-label="Your sessions">
+              <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">
+                Continue a session
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {sessions.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => resume(s)}
+                    className="rounded-lg border border-border bg-surface p-4 text-left hover:border-accent"
+                  >
+                    <div className="font-medium text-fg">
+                      {s.spine_title ?? s.subject ?? "Free-roam session"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted">
+                      {s.message_count} message{s.message_count === 1 ? "" : "s"}
+                      {s.last_activity
+                        ? ` · ${new Date(s.last_activity).toLocaleString()}`
+                        : ""}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
           {anchors.length > 0 && (
             <section className="mb-10" aria-label="Curiosity anchors">

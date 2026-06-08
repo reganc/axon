@@ -95,6 +95,7 @@ class Ingestion:
         node_in = NodeIn(
             canonical_key=key,
             title=candidate.title,
+            kind=candidate.kind,
             hook=candidate.hook,
             body=candidate.body,
             recall_prompts=candidate.recall_prompts,

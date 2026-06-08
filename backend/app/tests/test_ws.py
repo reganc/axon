@@ -25,14 +25,20 @@ def _scripted_companion(plan):
 
 
 def test_ws_requires_token(client, seeded):
-    # connecting without a token is refused (policy violation, no accept)
+    # No token -> the server accepts, emits an actionable `error` event, then
+    # closes with a policy-violation code, so the client can stop retrying a
+    # dead session instead of seeing an opaque drop.
     import pytest
     from starlette.websockets import WebSocketDisconnect
 
     fake_id = "00000000-0000-0000-0000-000000000000"
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect(f"/ws/companion/{fake_id}") as ws:
+    with client.websocket_connect(f"/ws/companion/{fake_id}") as ws:
+        msg = ws.receive_json()
+        assert msg["type"] == "error"
+        assert msg["data"]["reason"]
+        with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_json()
+        assert exc.value.code == 1008
 
 
 def test_ws_streams_a_turn(client, seeded, monkeypatch):

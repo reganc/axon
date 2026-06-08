@@ -17,6 +17,7 @@
   --spine: #4f46e5;
   --node-bg: #ffffff;
   --warn: #b45309;
+  --overlay: rgba(26, 26, 31, 0.4);
 }
 
 .dark {
@@ -31,6 +32,7 @@
   --spine: #818cf8;
   --node-bg: #1a1a22;
   --warn: #fbbf24;
+  --overlay: rgba(0, 0, 0, 0.55);
 }
 
 html,
@@ -42,4 +44,38 @@ body {
 /* React Flow surface follows the theme tokens too. */
 .react-flow__background {
   background: var(--bg);
+}
+
+/* Card deck motion: a gentle pop-in as cards arrive, and a slow float so the
+   deck feels alive ("balloon" feel) without distracting. Colors stay in tokens. */
+@keyframes axon-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes axon-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.animate-pop-in {
+  animation: axon-pop-in 0.3s ease-out both;
+}
+.animate-float {
+  animation: axon-float 6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop-in,
+  .animate-float {
+    animation: none;
+  }
 }

@@ -142,6 +142,21 @@ class Checkout(BaseModel):
     subject: str | None = None
 
 
+class CheckoutSummary(BaseModel):
+    id: UUID
+    subject: str | None = None
+    spine_id: UUID | None = None
+    spine_title: str | None = None
+    created_at: datetime
+    last_activity: datetime | None = None
+    message_count: int = 0
+
+
+class ConversationEvent(BaseModel):
+    type: str
+    data: dict = Field(default_factory=dict)
+
+
 class NodeState(BaseModel):
     checkout_id: UUID
     node_id: UUID
@@ -152,6 +167,7 @@ class NodeState(BaseModel):
 
 class CandidateNode(BaseModel):
     title: str
+    kind: NodeKind = "concept"  # study materials persist as artifact/question nodes
     hook: str | None = None
     body: str | None = None
     recall_prompts: list[str] = Field(default_factory=list)
@@ -246,6 +262,9 @@ class CompanionPort(Protocol):
         self, checkout_id: UUID, message: str
     ) -> AsyncIterator[StreamEvent]: ...
     def pull_thread(
+        self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]: ...
+    def explain_node(
         self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]: ...
 

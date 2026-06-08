@@ -10,16 +10,16 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from sqlalchemy import text
 
 from ...embeddings import Embedder
 from ...errors import NotFoundError
 from ...ports import (
     Checkout,
+    CheckoutSummary,
+    ConversationEvent,
     Coverage,
     Facets,
     FacetGroup,
@@ -28,8 +28,19 @@ from ...ports import (
     NodeState,
     ScoredNode,
 )
-from ...tables import canonical_nodes, checkouts, node_states, spines, users
+from ...tables import (
+    canonical_nodes,
+    checkouts,
+    conversation_events,
+    node_states,
+    spines,
+    users,
+)
 from ..content import _NODE_COLS, _row_to_node
+
+# Stream-event types worth persisting for session replay (canvas + transcript);
+# transient control events (status/done) are not stored.
+_REPLAYABLE = {"say", "ask", "node.create", "node.update", "edge.create"}
 
 # Cold-start home screen surfaces these anchor kinds (Phase 5 §5/§6).
 ENTRY_POINT_KINDS = ("question", "person")
@@ -262,6 +273,77 @@ class Library:
                 )
             ).first()
         return row._mapping[checkouts.c.user_id] if row else None
+
+    # -- durable conversation log (session replay) ----------------------------
+
+    async def record_event(self, checkout_id: UUID, type_: str, data: dict) -> None:
+        """Append a companion stream event to the durable log (replayable types
+        only) so the session survives the browser tab."""
+        if type_ not in _REPLAYABLE:
+            return
+        async with self._sm() as session, session.begin():
+            await session.execute(
+                conversation_events.insert().values(
+                    checkout_id=UUID(str(checkout_id)), type=type_, data=data
+                )
+            )
+
+    async def get_conversation(self, checkout_id: UUID) -> list[ConversationEvent]:
+        """The stored event stream for a checkout, in order — replayed on load to
+        rebuild the canvas + transcript."""
+        async with self._sm() as session:
+            rows = (
+                await session.execute(
+                    select(conversation_events.c.type, conversation_events.c.data)
+                    .where(conversation_events.c.checkout_id == UUID(str(checkout_id)))
+                    .order_by(conversation_events.c.id)
+                )
+            ).all()
+        return [
+            ConversationEvent(
+                type=r._mapping[conversation_events.c.type],
+                data=r._mapping[conversation_events.c.data] or {},
+            )
+            for r in rows
+        ]
+
+    async def list_checkouts(self, user_id: UUID) -> list[CheckoutSummary]:
+        """A learner's sessions, most-recently-active first — for the home screen."""
+        rows = await self._exec_summary(UUID(str(user_id)))
+        return [
+            CheckoutSummary(
+                id=m["id"],
+                subject=m["subject"],
+                spine_id=m["spine_id"],
+                spine_title=m["spine_title"],
+                created_at=m["created_at"],
+                last_activity=m["last_activity"],
+                message_count=int(m["message_count"] or 0),
+            )
+            for m in rows
+        ]
+
+    async def _exec_summary(self, user_id: UUID):
+        stmt = text(
+            """
+            SELECT c.id, c.subject, c.spine_id, s.title AS spine_title, c.created_at,
+                   ce.last_activity,
+                   COALESCE(ce.say_count, 0) AS message_count
+            FROM checkouts c
+            LEFT JOIN spines s ON s.id = c.spine_id
+            LEFT JOIN LATERAL (
+                SELECT max(ts) AS last_activity,
+                       count(*) FILTER (WHERE type = 'say') AS say_count
+                FROM conversation_events WHERE checkout_id = c.id
+            ) ce ON TRUE
+            WHERE c.user_id = :u
+            ORDER BY COALESCE(ce.last_activity, c.created_at) DESC
+            LIMIT 50
+            """
+        )
+        async with self._sm() as session:
+            result = await session.execute(stmt, {"u": user_id})
+            return [r._mapping for r in result.all()]
 
     async def overlay_state(self, checkout_id: UUID) -> list[NodeState]:
         cid = UUID(str(checkout_id))

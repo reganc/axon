@@ -7,6 +7,7 @@ checkout belongs to the caller, then runs a bidirectional loop:
   client -> server : {type: subject|start, text}      start/continue a turn
                      {type: interrupt|answer, text}    barge-in (re-enters Tutor)
                      {type: pull_thread, node_id}      spawn a rabbit-hole
+                     {type: explain, node_id}          deep-dive a selected card
                      {type: close}                     end
   server -> client : StreamEvent JSON (say/ask/node.create/node.update/...)
 
@@ -34,6 +35,12 @@ _POLICY_VIOLATION = 1008
 
 @router.websocket("/ws/companion/{checkout_id}")
 async def companion_ws(ws: WebSocket, checkout_id: UUID):
+    # Accept first, then validate. Closing *before* accept surfaces to browsers as
+    # an opaque 1006 abnormal-closure with no code or reason, so clients can't tell
+    # a permanently-dead checkout (retry is pointless) from a transient blip and
+    # reconnect forever. Accepting then closing with 1008 + reason gives the client
+    # an actionable signal.
+    await ws.accept()
     token = ws.query_params.get("token") or _bearer(ws.headers.get("authorization"))
     try:
         if not token:
@@ -45,13 +52,19 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
         if owner != principal.user_id:
             auth().require(principal, "checkout:read:any")  # only admins read others'
     except DomainError as exc:
+        # Direct send (not _send): a transient error must not be persisted to the
+        # durable conversation log or replayed on the next connect.
+        try:
+            await ws.send_json({"type": "error", "data": {"reason": str(exc)}})
+        except RuntimeError:
+            pass  # socket already gone
         await ws.close(code=_POLICY_VIOLATION, reason=str(exc))
         return
 
-    await ws.accept()
     cid = checkout_id
     inbox: asyncio.Queue = asyncio.Queue()
     turn: asyncio.Task | None = None
+    aux: asyncio.Task | None = None  # deep-dive stream; cancelled when superseded
 
     async def stream(agen) -> None:
         async for ev in agen:
@@ -75,6 +88,14 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
                 await stream(companion().pull_thread(cid, msg.get("node_id")))
             elif kind == "explore_question":
                 await stream(companion().explore_question(cid, msg.get("node_id")))
+            elif kind == "explain":
+                # Deep-dive on a selected card. Runs as a cancellable task so the
+                # receive loop keeps reading — opening another card supersedes it.
+                if aux and not aux.done():
+                    aux.cancel()
+                aux = asyncio.create_task(
+                    stream(companion().explain_node(cid, msg.get("node_id")))
+                )
             elif kind == "close":
                 break
             else:
@@ -86,8 +107,9 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
     except WebSocketDisconnect:
         pass
     finally:
-        if turn and not turn.done():
-            turn.cancel()
+        for task in (turn, aux):
+            if task and not task.done():
+                task.cancel()
         await _safe_close(ws)
 
 
@@ -101,6 +123,8 @@ async def _send(ws: WebSocket, cid, ev: StreamEvent) -> None:
     payload = {"type": ev.type, "data": ev.data}
     await ws.send_json(payload)
     await bus.publish(cid, payload)
+    # durable log: replayable events are persisted so the session survives the tab
+    await library().record_event(cid, ev.type, ev.data)
 
 
 async def _safe_close(ws: WebSocket) -> None:

@@ -22,6 +22,11 @@ class Settings(BaseSettings):
         8100  # container-internal bind; host maps via AXON_API_PORT (default 4100)
     )
     cors_origins: list[str] = ["http://localhost:4101", "http://localhost:3000"]
+    # Optional regex of additional allowed origins, for reaching the app over a
+    # LAN / Tailscale IP without pinning each one. Passed to CORSMiddleware's
+    # allow_origin_regex; the specific matched origin is echoed back, so this is
+    # credential-safe (unlike a "*" wildcard). Empty = strict list-only default.
+    cors_origin_regex: str = ""
 
     # data / cache
     database_url: str = "postgresql+asyncpg://axon:axon@db:5432/axon"
@@ -68,6 +73,9 @@ class Settings(BaseSettings):
         0.55  # Researcher: below -> flag, don't publish as fact
     )
     companion_max_steps: int = 8  # cap nodes generated per turn
+    companion_generate_concurrency: int = (
+        3  # nodes materialized in parallel per turn (generate ∥ ground pipeline)
+    )
     librarian_merge_threshold: float = (
         0.93  # background dedup of near-duplicate AI nodes
     )
@@ -82,8 +90,14 @@ class Settings(BaseSettings):
     miner_max_spans: int = 40  # safety cap on spans mined per source
 
     # cost control (specs/06): tiered routing + budgets + circuit breaker
-    model_reason: str = "claude-sonnet-4-6"  # default cloud reasoning model
-    model_cheap: str = "claude-haiku-4-5"  # cheap cloud tasks (extract/classify)
+    model_reason: str = "claude-sonnet-4-6"  # accuracy-critical cloud reasoning
+    model_cheap: str = "claude-haiku-4-5"  # cheap cloud tasks (extract/classify/plan)
+    model_ground: str = "claude-haiku-4-5"  # research grounding — Haiku is plenty
+    # Where the fast tier (node drafts + streamed narration/explanations) runs.
+    # "local" = the shared 14B gateway (free, ~24s/draft). "cloud" = model_cheap
+    # (Haiku, ~2s) — far faster at trivial cost; requires an Anthropic key. The
+    # budget breaker still degrades cloud fast-work to local when over budget.
+    fast_tier: str = "local"  # "local" | "cloud"
     escalate_floor: float = (
         0.6  # local draft below this confidence -> escalate to cloud
     )
@@ -94,6 +108,30 @@ class Settings(BaseSettings):
     batch_enabled: bool = (
         True  # route latency-tolerant cloud work through the Batch API
     )
+
+    # voice I/O (self-hosted, no external services): Piper TTS + faster-whisper
+    # STT. Models lazy-load to voice_model_dir (a mounted volume) on first use.
+    # Whisper defaults to CPU/int8 so it never contends with the shared Ollama
+    # model on the host GPU; flip stt_device="cuda" if you have headroom.
+    voice_enabled: bool = True
+    voice_model_dir: str = "/models/voice"
+    tts_voice: str = "en_GB-alan-medium"  # Piper voice: calm British male ~ "Jarvis"
+    tts_piper_bin: str = "/opt/piper/piper"  # standalone binary (set in Dockerfile)
+    tts_length_scale: float = 1.0  # >1 slower/calmer, <1 faster
+    stt_model: str = "base.en"  # faster-whisper size: tiny.en|base.en|small.en
+    stt_device: str = "cpu"  # "cpu" | "cuda"
+    stt_compute_type: str = "int8"  # "int8" (cpu) | "float16" (cuda)
+    stt_beam_size: int = 1
+    stt_language: str = "en"
+    # client-side voice tuning, served to the frontend via GET /voice/config so
+    # all tuning lives in one place (this .env), not a frontend rebuild.
+    vad_silence_ms: int = 900  # stop capture after this much trailing silence
+    vad_max_ms: int = 12000  # hard cap on one hands-free capture
+    vad_no_speech_ms: int = 6000  # bail if nothing is said after arming
+    vad_rms_threshold: float = 0.015  # amplitude (0..1) that counts as speech
+    wake_cooldown_ms: int = 2500  # debounce: one "Jarvis" fires once
+    wake_restart_ms: int = 300  # gap before restarting the recognizer
+    wake_phrase: str = "jarvis|jervis|jarvus|jarviss|service"  # accepted, |-sep
 
 
 @lru_cache

@@ -9,16 +9,41 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+from pathlib import Path
 
 import pytest
 
-# Env must be set before app.config's settings are first read (it is lru_cached).
-os.environ.setdefault(
-    "AXON_DATABASE_URL", "postgresql+asyncpg://axon:change-me@localhost:4102/axon"
+# The suite is DESTRUCTIVE — fixtures TRUNCATE the graph/overlay tables. It must
+# never touch the app's live database. Derive a dedicated `*_test` sibling from
+# whatever DB the app is configured for (or AXON_TEST_DATABASE_URL when given)
+# and force it into the environment *before* app.config's lru_cached settings are
+# first read, so the TestClient app, the seam fixtures, and the raw-SQL helpers
+# all share the one isolated DB.
+_DEFAULT_DB = "postgresql+asyncpg://axon:change-me@localhost:4102/axon"
+
+
+def _derive_test_url(url: str) -> str:
+    m = re.match(r"(?P<prefix>.*/)(?P<db>[^/?]+)(?P<query>\?.*)?$", url)
+    if not m:
+        return url
+    db = m.group("db")
+    if not db.endswith("_test"):
+        db = f"{db}_test"
+    return f"{m.group('prefix')}{db}{m.group('query') or ''}"
+
+
+_TEST_DB_URL = os.environ.get("AXON_TEST_DATABASE_URL") or _derive_test_url(
+    os.environ.get("AXON_DATABASE_URL", _DEFAULT_DB)
 )
+os.environ["AXON_DATABASE_URL"] = _TEST_DB_URL
 os.environ.setdefault("AXON_OLLAMA_BASE_URL", "http://localhost:11434")
 os.environ.setdefault("AXON_JWT_SECRET", "test-secret-not-for-prod")
 os.environ.setdefault("AXON_DB_USE_NULLPOOL", "true")
+# Deployment behaviour knobs a developer may have in .env (e.g. fast_tier=cloud)
+# must not leak into unit tests that assert code defaults. Scrub them from the
+# test process; tests that exercise a non-default set it explicitly.
+os.environ.pop("AXON_FAST_TIER", None)
 
 import httpx  # noqa: E402
 import sqlalchemy as sa  # noqa: E402
@@ -26,6 +51,59 @@ from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
 DB_URL = os.environ["AXON_DATABASE_URL"]
 OLLAMA_URL = os.environ["AXON_OLLAMA_BASE_URL"]
+
+
+def _bootstrap_test_db() -> None:
+    """Create the dedicated test database and apply the schema if it's missing,
+    so `pytest` works out of the box without ever provisioning live data."""
+    import asyncpg
+
+    dsn = DB_URL.replace("postgresql+asyncpg://", "postgresql://")
+    db_name = re.match(r".*/([^/?]+)(\?.*)?$", dsn).group(1)
+    maint = re.sub(r"/[^/?]+(\?.*)?$", "/postgres", dsn, count=1)
+    # artifacts/ sits beside backend/ in a repo checkout (CI) but is mounted at
+    # /app/artifacts inside the api container — walk up until we find it so the
+    # path is layout-independent.
+    schema_path = next(
+        (
+            p / "artifacts" / "schema.sql"
+            for p in Path(__file__).resolve().parents
+            if (p / "artifacts" / "schema.sql").is_file()
+        ),
+        None,
+    )
+
+    async def go() -> None:
+        admin = await asyncpg.connect(maint)
+        try:
+            if not await admin.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = $1", db_name
+            ):
+                await admin.execute(f'CREATE DATABASE "{db_name}"')
+        finally:
+            await admin.close()
+        conn = await asyncpg.connect(dsn)
+        try:
+            empty = await conn.fetchval("SELECT to_regclass('public.canonical_nodes')")
+            if empty is None:
+                if schema_path is None:
+                    raise RuntimeError(
+                        "artifacts/schema.sql not found; cannot provision the test DB"
+                    )
+                await conn.execute(schema_path.read_text())
+        finally:
+            await conn.close()
+
+    asyncio.run(go())
+
+
+try:
+    _bootstrap_test_db()
+except OSError:
+    # DB server unreachable (no Postgres in this environment) -> DB tests skip
+    # via DB_AVAILABLE below. A reachable-but-unprovisionable DB raises instead,
+    # so the failure is loud rather than a cascade of "relation does not exist".
+    pass
 
 FOUNDATIONS_SPINE_ID = "69f5cb6a-449a-518d-8a5b-6b182a1ac320"
 
@@ -99,6 +177,15 @@ SEED_AUTHOR = "aaaaaaaa-0000-0000-0000-000000000001"
 async def reset_graph() -> None:
     """Truncate graph + overlay tables — keeps the suite repeatable on a
     persistent dev DB (first-load insert counts stay deterministic)."""
+    # Hard stop: this TRUNCATEs (CASCADE). Never run it against a live DB. The
+    # header forces a `*_test` database; this is the belt-and-braces check in
+    # case AXON_DATABASE_URL is ever pointed somewhere destructive.
+    db_name = DB_URL.rsplit("/", 1)[-1].split("?")[0]
+    if not db_name.endswith("_test"):
+        raise RuntimeError(
+            f"refusing to TRUNCATE non-test database {db_name!r}; point "
+            "AXON_TEST_DATABASE_URL (or AXON_DATABASE_URL) at a *_test database"
+        )
     engine = create_async_engine(DB_URL, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
@@ -181,6 +268,21 @@ def scripted_handler(plan: list[str], confidence: float = 0.8):
         if "TASK: ground" in user:
             return json.dumps(
                 {"confidence": confidence, "source_ref": "test://grounded"}
+            )
+        if "TASK: explain" in user:
+            concept = _between(user, "Concept:", "\n") or "concept"
+            return (
+                f"Let's dig into {concept}. The core intuition is simple. "
+                f"Here is a concrete example. And this is why it matters."
+            )
+        if "TASK: materials" in user:
+            concept = _between(user, "Concept:", "\n") or "concept"
+            return json.dumps(
+                {
+                    "summary": f"The essentials of {concept} in a few sentences.",
+                    "analogy": f"{concept} is like a familiar everyday thing.",
+                    "questions": [f"What breaks if {concept} is wrong?"],
+                }
             )
         return "OK"
 

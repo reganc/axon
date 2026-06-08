@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from . import bus, db
-from .api.routers import auth, browse, graph, health, ingest, library
+from .api.routers import auth, browse, graph, health, ingest, library, voice
 from .api.ws import companion as companion_ws
 from .config import get_settings
 from .errors import DomainError
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=s.cors_origins,
+        allow_origin_regex=s.cors_origin_regex or None,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -52,7 +53,7 @@ def create_app() -> FastAPI:
     async def _domain_error(request: Request, exc: DomainError):
         return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
 
-    for r in (health, auth, graph, library, ingest, browse):
+    for r in (health, auth, graph, library, ingest, browse, voice):
         app.include_router(r.router)
     app.include_router(companion_ws.router)
     return app

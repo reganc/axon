@@ -2,7 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { issueToken, ApiError } from "@/lib/api";
+import { issueToken, errorMessage } from "@/lib/api";
 import { saveSession } from "@/lib/auth";
 import type { Role } from "@/lib/types";
 
@@ -26,7 +26,7 @@ export default function LoginPage() {
       saveSession({ token, userId, role });
       router.push("/library");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "could not reach the API");
+      setError(errorMessage(e, "could not reach the API"));
     } finally {
       setBusy(false);
     }

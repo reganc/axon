@@ -62,6 +62,16 @@ export interface Checkout {
   subject?: string | null;
 }
 
+export interface CheckoutSummary {
+  id: string;
+  subject?: string | null;
+  spine_id?: string | null;
+  spine_title?: string | null;
+  created_at: string;
+  last_activity?: string | null;
+  message_count: number;
+}
+
 export interface EdgeDTO {
   id: string;
   src_node: string;
@@ -72,7 +82,8 @@ export interface EdgeDTO {
 // Server -> client stream events. The frontend demuxes this one stream into the
 // graph canvas (node/edge) and the companion transcript (say/ask/status).
 export type StreamEvent =
-  | { type: "say"; data: { text: string } }
+  // `node_id` is set on deep-dive narration so it can be pinned to the open card.
+  | { type: "say"; data: { text: string; node_id?: string } }
   | { type: "ask"; data: { prompt: string; options?: string[] } }
   | { type: "node.create"; data: { temp_id: string; node: Partial<NodeDTO>; reused?: boolean } }
   | {
@@ -90,4 +101,5 @@ export type ClientMessage =
   | { type: "answer"; text: string }
   | { type: "pull_thread"; node_id: string }
   | { type: "explore_question"; node_id: string }
+  | { type: "explain"; node_id: string }
   | { type: "close" };

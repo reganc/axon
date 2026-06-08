@@ -112,17 +112,32 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         const canonicalId = ev.data.canonical_id;
         if (temp) {
           const patch = ev.data.patch as Record<string, unknown>;
+          const existing = nodes[canonicalId];
           const merged: GNode = {
             ...temp,
             id: canonicalId,
             optimistic: false,
+            // A temp can canonicalize *into* a node that's already on the spine;
+            // keep its spine status so layout/position don't flip.
+            onSpine: temp.onSpine || (existing?.onSpine ?? false),
             origin: (patch.origin as string) ?? temp.origin,
             confidence: (patch.confidence as number) ?? temp.confidence,
             flagged: Boolean(patch.flagged_low_confidence),
           };
           delete nodes[ev.data.temp_id];
           nodes[canonicalId] = merged;
-          order = order.map((o) => (o === ev.data.temp_id ? canonicalId : o));
+          // Remap temp_id -> canonicalId in the order list, then de-duplicate.
+          // Two optimistic nodes can merge into one canonical node (the library
+          // collapsing duplicates), which would otherwise leave canonicalId in
+          // `order` twice -> duplicate React keys and duplicated/omitted cards.
+          const seen = new Set<string>();
+          order = order
+            .map((o) => (o === ev.data.temp_id ? canonicalId : o))
+            .filter((o) => {
+              if (seen.has(o)) return false;
+              seen.add(o);
+              return true;
+            });
           // repoint any edges that referenced the temp id
           for (const e of Object.values(edges)) {
             if (e.source === ev.data.temp_id) e.source = canonicalId;

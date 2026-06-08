@@ -8,14 +8,15 @@ replies are parsed leniently (code fences / surrounding prose tolerated).
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 
 from ...config import Settings, get_settings
 from ...jsonutil import parse_json
-from ...ports import CandidateNode, LLMPort, Msg
+from ...ports import CandidateNode, LLMPort, Msg, Node
 
 log = logging.getLogger("axon.agents")
 
-__all__ = ["Planner", "NodeGenerator", "Researcher", "parse_json"]
+__all__ = ["Planner", "NodeGenerator", "Researcher", "Elaborator", "parse_json"]
 
 
 def _clamp01(x: float) -> float:
@@ -153,3 +154,111 @@ class Researcher:
     @property
     def floor(self) -> float:
         return self._s.companion_confidence_floor
+
+
+class Elaborator:
+    """Deep-dive on an existing node (tier=fast).
+
+    `explain` streams a flowing, spoken-style explanation of the node itself —
+    the experience layer, ephemeral talk. `materials` returns study artifacts
+    (a key-points summary, an analogy, follow-up questions) as CandidateNodes
+    so the caller can persist them through the canonicalize chokepoint.
+    """
+
+    def __init__(self, llm: LLMPort, settings: Settings | None = None) -> None:
+        self._llm = llm
+        self._s = settings or get_settings()
+
+    def explain(self, node: Node) -> AsyncIterator[str]:
+        msgs = [
+            Msg(
+                role="system",
+                content=(
+                    "You are AXON's Tutor speaking aloud to one learner. Explain the "
+                    "concept conversationally and in depth — intuition first, then a "
+                    "concrete example, then why it matters. Flowing spoken prose, no "
+                    "markdown, no headings, no lists, no citations."
+                ),
+            ),
+            Msg(
+                role="user",
+                content=(
+                    f"TASK: explain\nConcept: {node.title}\n"
+                    f"Existing hook: {node.hook or ''}\n"
+                    f"Existing notes: {node.body or ''}\n"
+                    "Teach it richly, as if thinking out loud with the learner."
+                ),
+            ),
+        ]
+        return self._llm.stream(msgs, "fast")
+
+    async def materials(
+        self, node: Node, *, checkout_id=None, user_id=None
+    ) -> list[CandidateNode]:
+        msgs = [
+            Msg(
+                role="system",
+                content=(
+                    "You are AXON's Tutor distilling study materials from a concept "
+                    "you just explained. Be concise and faithful to the concept."
+                ),
+            ),
+            Msg(
+                role="user",
+                content=(
+                    f"TASK: materials\nConcept: {node.title}\n"
+                    f"Notes: {node.body or node.hook or ''}\n"
+                    'Return JSON only: {"summary": "3-5 sentence key-points recap", '
+                    '"analogy": "one vivid analogy", '
+                    '"questions": ["a follow-up question", "another"]}'
+                ),
+            ),
+        ]
+        data = parse_json(
+            await self._llm.complete(
+                msgs, "fast", task="draft", checkout_id=checkout_id, user_id=user_id
+            )
+        )
+        data = data if isinstance(data, dict) else {}
+        src = f"companion/deep-dive/{node.id}"
+        out: list[CandidateNode] = []
+        summary = (data.get("summary") or "").strip()
+        if summary:
+            out.append(
+                CandidateNode(
+                    title=f"Key points: {node.title}",
+                    kind="artifact",
+                    hook="A quick recap of the essentials.",
+                    body=summary,
+                    origin="ai_generated",
+                    source_ref=src,
+                    confidence=node.confidence,
+                )
+            )
+        analogy = (data.get("analogy") or "").strip()
+        if analogy:
+            out.append(
+                CandidateNode(
+                    title=f"Analogy: {node.title}",
+                    kind="artifact",
+                    hook="A way to picture it.",
+                    body=analogy,
+                    origin="ai_generated",
+                    source_ref=src,
+                    confidence=node.confidence,
+                )
+            )
+        for q in data.get("questions") or []:
+            q = str(q).strip()
+            if q:
+                out.append(
+                    CandidateNode(
+                        title=q,
+                        kind="question",
+                        hook=q,
+                        origin="ai_generated",
+                        source_ref=src,
+                        confidence=0.5,
+                    )
+                )
+        return out

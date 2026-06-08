@@ -19,6 +19,7 @@ from .seams.identity import JwtAuth
 from .seams.ingestion import Ingestion
 from .seams.learning import Learning
 from .seams.library import Library
+from .voice import SttEngine, TtsEngine
 
 
 @lru_cache
@@ -75,3 +76,13 @@ def companion() -> Companion:
         learning=learning(),
         settings=get_settings(),
     )
+
+
+@lru_cache
+def tts_engine() -> TtsEngine:
+    return TtsEngine(get_settings())
+
+
+@lru_cache
+def stt_engine() -> SttEngine:
+    return SttEngine(get_settings())
