@@ -21,11 +21,11 @@ test("sending a subject streams companion activity over the WebSocket", async ({
   await page.getByPlaceholder("Teach me about…").fill("convolutional networks");
   await page.getByRole("button", { name: "Send" }).click();
   // Structure/status is suppressed, so the WS round-trip shows as the companion's
-  // narration or a fresh card. This crosses the real local LLM (plan -> generate),
-  // so the timeout is model-sized, not UI-sized.
-  await expect(page.getByText(/new idea|seen this|revisit/i).first()).toBeVisible({
-    timeout: 45000,
-  });
+  // narration — a single lead-in line, then the generated titles. This crosses the
+  // real local LLM (plan -> generate), so the timeout is model-sized, not UI-sized.
+  await expect(
+    page.getByText(/some items you might find interesting/i),
+  ).toBeVisible({ timeout: 45000 });
 });
 
 test("opening a card reveals hook then body and offers a go-deeper CTA", async ({ page }) => {

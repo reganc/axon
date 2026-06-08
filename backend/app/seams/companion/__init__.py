@@ -115,6 +115,10 @@ class Companion:
         owner = await self._library.checkout_owner(cid)
         yield _ev("status", phase="planning", detail="checking the library…")
         plan = await self._planner.plan(message, checkout_id=cid, user_id=owner)
+        if plan:
+            # One lead-in line, then just the titles as each card lands — no
+            # per-card preamble, so the run reads as a smooth list.
+            yield _ev("say", text="Some items you might find interesting.")
 
         # Materialize a few upcoming nodes concurrently (each is a local draft
         # then a cloud grounding pass) while emitting strictly in plan order, so
@@ -378,12 +382,7 @@ class Companion:
             if hits and hits[0].score >= self._s.companion_reuse_threshold:
                 existing = hits[0].node
         if existing is not None:
-            events.append(
-                _ev(
-                    "say",
-                    text=f"You've seen this — {existing.title}. Let's revisit it.",
-                )
-            )
+            events.append(_ev("say", text=existing.title))
             events.append(
                 _ev(
                     "node.create",
@@ -401,7 +400,7 @@ class Companion:
         candidate = await self._researcher.ground(
             candidate, checkout_id=checkout_id, user_id=user_id
         )
-        events.append(_ev("say", text=f"Here's a new idea: {title}."))
+        events.append(_ev("say", text=title))
         node, persist_events = await self._persist_candidate(candidate)
         events.extend(persist_events)
         return node, events
