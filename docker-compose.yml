@@ -49,6 +49,18 @@ services:
       - ./artifacts:/app/artifacts:ro  # seed graph + schema for /ingest/seed and tests
     networks: [axon_net]
 
+  # Background curator: dedups near-duplicate AI nodes on an interval. Same image
+  # as the api, different entrypoint. No ports — it only talks to the DB.
+  worker:
+    build: ./backend
+    env_file: .env
+    command: ["python", "-m", "app.workers.librarian"]
+    depends_on:
+      db: { condition: service_healthy }
+      cache: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [axon_net]
+
 networks:
   axon_net:
     ipam:

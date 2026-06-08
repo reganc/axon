@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     librarian_merge_threshold: float = (
         0.93  # background dedup of near-duplicate AI nodes
     )
+    librarian_interval_sec: float = (
+        300.0  # seconds between background curation passes (the worker loop)
+    )
 
     # transcript miner (Phase 3)
     miner_segment_threshold: float = (

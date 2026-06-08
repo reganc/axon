@@ -12,6 +12,7 @@ rotting and is what Phase 2 asserts.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from sqlalchemy import text
@@ -127,3 +128,33 @@ async def run_once(
     if merged:
         log.info("librarian merged %d near-duplicate node(s)", merged)
     return {"merged": merged}
+
+
+async def run_forever(interval_sec: float | None = None) -> None:
+    """Curation loop: a `run_once` pass every `interval_sec` until cancelled. A
+    failing pass is logged and the loop continues — one bad pass must not take the
+    worker down."""
+    s = get_settings()
+    interval = s.librarian_interval_sec if interval_sec is None else interval_sec
+    log.info("librarian worker up (interval=%.0fs)", interval)
+    try:
+        while True:
+            try:
+                await run_once()
+            except Exception:  # noqa: BLE001 - keep curating despite a bad pass
+                log.exception("librarian pass failed; continuing")
+            await asyncio.sleep(interval)
+    finally:
+        await db.dispose()
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    try:
+        asyncio.run(run_forever())
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
