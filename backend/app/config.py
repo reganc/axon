@@ -73,6 +73,9 @@ class Settings(BaseSettings):
         0.55  # Researcher: below -> flag, don't publish as fact
     )
     companion_max_steps: int = 8  # cap nodes generated per turn
+    companion_generate_concurrency: int = (
+        3  # nodes materialized in parallel per turn (generate ∥ ground pipeline)
+    )
     librarian_merge_threshold: float = (
         0.93  # background dedup of near-duplicate AI nodes
     )

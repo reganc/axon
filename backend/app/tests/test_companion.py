@@ -64,6 +64,41 @@ async def test_interrupt_visibly_changes_the_stream(seeded, seams):
     assert any("Backpropagation" in t for t in says)
 
 
+async def test_run_turn_materializes_in_parallel_but_emits_in_order(seeded, seams):
+    """Upcoming nodes are generated+grounded concurrently (the latency win) while
+    events still stream strictly in plan order (the spine stays coherent)."""
+    plan = [
+        "Parallel pipeline topic alpha",
+        "Parallel pipeline topic beta",
+        "Parallel pipeline topic gamma",
+    ]
+    comp = make_companion(seams, plan=plan)
+    checkout = await _free_checkout(seams, "parallel subjects")
+
+    original = comp._materialize
+    active = peak = 0
+
+    async def _instrumented(cid, title, subject, *, user_id=None):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.05)  # hold so concurrent tasks accumulate
+            return await original(cid, title, subject, user_id=user_id)
+        finally:
+            active -= 1
+
+    comp._materialize = _instrumented
+    steps = [
+        e.data.get("detail")
+        async for e in comp.run_turn(checkout.id, "parallel subjects")
+        if e.type == "status" and e.data.get("phase") == "step"
+    ]
+
+    assert peak >= 2  # ran concurrently, not strictly serially
+    assert steps == plan  # yet emitted in exact plan order
+
+
 async def test_generated_node_never_overwrites_locked_anchor(seeded, seams):
     before = await seams.content.get_node_by_key("cnn-weight-sharing")
     comp = make_companion(seams, plan=["CNN weight sharing"])

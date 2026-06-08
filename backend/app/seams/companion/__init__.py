@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections import deque
 from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
@@ -115,49 +116,94 @@ class Companion:
         yield _ev("status", phase="planning", detail="checking the library…")
         plan = await self._planner.plan(message, checkout_id=cid, user_id=owner)
 
+        # Materialize a few upcoming nodes concurrently (each is a local draft
+        # then a cloud grounding pass) while emitting strictly in plan order, so
+        # one node's grounding overlaps the next's drafting instead of running the
+        # whole pipeline serially. Interrupts still swap only the *current* step
+        # and leave the rest of the plan intact, matching the serial behaviour.
+        width = max(1, self._s.companion_generate_concurrency)
+        upcoming = iter(plan)
+        pending: deque[tuple[str, asyncio.Task]] = deque()
+        inflight: set[asyncio.Task] = set()
+
+        def _launch(title: str) -> asyncio.Task:
+            task = asyncio.create_task(
+                self._materialize(cid, title, message, user_id=owner)
+            )
+            inflight.add(task)
+            return task
+
+        def _fill() -> None:
+            while len(pending) < width:
+                nxt = next(upcoming, None)
+                if nxt is None:
+                    return
+                pending.append((nxt, _launch(nxt)))
+
         prev_id: UUID | None = None
         produced = 0
-        for title in plan:
-            barge = _drain(inbox)
-            if barge and barge.get("type") == "interrupt":
-                title = (barge.get("text") or title).strip()
-                yield _ev("say", text=f"Sure — let's switch to {title}.")
-            elif barge and barge.get("type") == "answer":
+        try:
+            _fill()
+            while pending:
+                barge = _drain(inbox)
+                if barge and barge.get("type") == "interrupt":
+                    redirect = (barge.get("text") or "").strip()
+                    if redirect:
+                        # Swap just the head; its speculative draft is abandoned
+                        # (cancelling rolls back any in-progress canonicalize).
+                        _old_title, old_task = pending.popleft()
+                        old_task.cancel()
+                        pending.appendleft((redirect, _launch(redirect)))
+                        yield _ev("say", text=f"Sure — let's switch to {redirect}.")
+                elif barge and barge.get("type") == "answer":
+                    await self._learning.record(
+                        InteractionEvent(
+                            checkout_id=cid,
+                            node_id=prev_id,
+                            event_type="explained_back",
+                            payload={"text": barge.get("text", "")},
+                        )
+                    )
+
+                title, task = pending.popleft()
+                yield _ev("status", phase="step", detail=title)
+                node, events = await task
+                inflight.discard(task)
+                for e in events:
+                    yield e
+
+                if prev_id is not None and prev_id != node.id:
+                    edge = await self._content.add_edge(
+                        prev_id, node.id, "next_in_spine", origin="ai_generated"
+                    )
+                    yield _ev(
+                        "edge.create",
+                        edge={
+                            "id": str(edge.id),
+                            "src_node": str(edge.src_node),
+                            "dst_node": str(edge.dst_node),
+                            "type": edge.type,
+                        },
+                    )
+
                 await self._learning.record(
                     InteractionEvent(
                         checkout_id=cid,
-                        node_id=prev_id,
-                        event_type="explained_back",
-                        payload={"text": barge.get("text", "")},
+                        node_id=node.id,
+                        event_type="viewed",
+                        payload={},
                     )
                 )
-
-            yield _ev("status", phase="step", detail=title)
-            node, events = await self._materialize(cid, title, message, user_id=owner)
-            for e in events:
-                yield e
-
-            if prev_id is not None and prev_id != node.id:
-                edge = await self._content.add_edge(
-                    prev_id, node.id, "next_in_spine", origin="ai_generated"
-                )
-                yield _ev(
-                    "edge.create",
-                    edge={
-                        "id": str(edge.id),
-                        "src_node": str(edge.src_node),
-                        "dst_node": str(edge.dst_node),
-                        "type": edge.type,
-                    },
-                )
-
-            await self._learning.record(
-                InteractionEvent(
-                    checkout_id=cid, node_id=node.id, event_type="viewed", payload={}
-                )
-            )
-            prev_id = node.id
-            produced += 1
+                prev_id = node.id
+                produced += 1
+                _fill()
+        finally:
+            # Abandoned (interrupt) and not-yet-consumed (early disconnect) drafts:
+            # cancel and drain so their transactions roll back cleanly.
+            for task in inflight:
+                task.cancel()
+            if inflight:
+                await asyncio.gather(*inflight, return_exceptions=True)
 
         await self._library.merge_companion_memory(
             cid, {"last_subject": message, "nodes_produced": produced}
