@@ -54,8 +54,15 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     });
   };
 
-  const { connected, sendSubject, answer, interrupt, pullThread, exploreQuestion } =
-    useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
+  const {
+    connected,
+    sendSubject,
+    answer,
+    interrupt,
+    pullThread,
+    exploreQuestion,
+    explain,
+  } = useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -148,7 +155,14 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
         onToggleSpeak={toggleSpeak}
       />
 
-      {openId && <CardDetail nodeId={openId} onClose={closeDetail} onExplore={onExplore} />}
+      {openId && (
+        <CardDetail
+          nodeId={openId}
+          onClose={closeDetail}
+          onExplore={onExplore}
+          onDeepDive={explain}
+        />
+      )}
     </div>
   );
 }

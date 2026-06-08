@@ -182,6 +182,21 @@ def scripted_handler(plan: list[str], confidence: float = 0.8):
             return json.dumps(
                 {"confidence": confidence, "source_ref": "test://grounded"}
             )
+        if "TASK: explain" in user:
+            concept = _between(user, "Concept:", "\n") or "concept"
+            return (
+                f"Let's dig into {concept}. The core intuition is simple. "
+                f"Here is a concrete example. And this is why it matters."
+            )
+        if "TASK: materials" in user:
+            concept = _between(user, "Concept:", "\n") or "concept"
+            return json.dumps(
+                {
+                    "summary": f"The essentials of {concept} in a few sentences.",
+                    "analogy": f"{concept} is like a familiar everyday thing.",
+                    "questions": [f"What breaks if {concept} is wrong?"],
+                }
+            )
         return "OK"
 
     return handler

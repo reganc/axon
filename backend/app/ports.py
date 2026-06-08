@@ -167,6 +167,7 @@ class NodeState(BaseModel):
 
 class CandidateNode(BaseModel):
     title: str
+    kind: NodeKind = "concept"  # study materials persist as artifact/question nodes
     hook: str | None = None
     body: str | None = None
     recall_prompts: list[str] = Field(default_factory=list)
@@ -261,6 +262,9 @@ class CompanionPort(Protocol):
         self, checkout_id: UUID, message: str
     ) -> AsyncIterator[StreamEvent]: ...
     def pull_thread(
+        self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]: ...
+    def explain_node(
         self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]: ...
 

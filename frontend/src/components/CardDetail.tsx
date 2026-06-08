@@ -1,20 +1,28 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { kindGlyph } from "@/lib/kind";
 import { ctaAria, ctaLabel } from "@/lib/prompts";
 import { type GNode, useGraphStore } from "@/store/graphStore";
+import { useTranscriptStore } from "@/store/transcriptStore";
 
 interface Props {
   nodeId: string;
   onClose: () => void;
   onExplore: (node: GNode) => void;
+  /** Start a streamed, spoken deep-dive on this card. */
+  onDeepDive: (nodeId: string) => void;
 }
 
-/** Focused reader for one card: the hook first, the explanation on reveal, then
- *  the same "go deeper" CTA. A lightbox over the deck — close on Esc/backdrop. */
-export function CardDetail({ nodeId, onClose, onExplore }: Props) {
+/** Focused reader for one card. Opening it asks the companion for a streamed,
+ *  conversational deep-dive (typed out live, spoken if voice is on), and shows
+ *  the canonical notes underneath. New study materials it generates appear as
+ *  cards in the deck. A lightbox over the deck — close on Esc/backdrop. */
+export function CardDetail({ nodeId, onClose, onExplore, onDeepDive }: Props) {
   const node = useGraphStore((s) => s.nodes[nodeId]);
+  const deepDive = useTranscriptStore((s) => s.deepDives[nodeId]);
+  const busy = useTranscriptStore((s) => s.busy);
   const [revealed, setRevealed] = useState(false);
+  const requested = useRef<Set<string>>(new Set());
 
   useEffect(() => setRevealed(false), [nodeId]);
   useEffect(() => {
@@ -23,8 +31,18 @@ export function CardDetail({ nodeId, onClose, onExplore }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // On open, kick off the deep-dive once per card (unless we already have it, or
+  // the card is still building / is a question seed).
+  const isQuestion = node?.kind === "question";
+  useEffect(() => {
+    if (!node || isQuestion || node.optimistic) return;
+    if (deepDive || requested.current.has(nodeId)) return;
+    requested.current.add(nodeId);
+    onDeepDive(nodeId);
+  }, [nodeId, node, isQuestion, deepDive, onDeepDive]);
+
   if (!node) return null;
-  const isQuestion = node.kind === "question";
+  const diving = busy && !deepDive;
 
   return (
     <div
@@ -62,16 +80,29 @@ export function CardDetail({ nodeId, onClose, onExplore }: Props) {
           <p className="mt-3 text-sm italic text-muted">
             An open question — go after it and the companion builds the ideas that answer it.
           </p>
-        ) : !revealed ? (
-          <button
-            type="button"
-            onClick={() => setRevealed(true)}
-            className="mt-4 self-start rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-fg hover:bg-surface"
-          >
-            Reveal explanation
-          </button>
         ) : (
-          <p className="mt-3 whitespace-pre-wrap text-sm text-muted">{node.body ?? "—"}</p>
+          <section className="mt-4" aria-label="Companion explanation">
+            {diving && (
+              <p className="animate-pulse text-sm italic text-muted">Jarvis is thinking…</p>
+            )}
+            {deepDive && (
+              <p className="whitespace-pre-wrap leading-relaxed text-fg">{deepDive}</p>
+            )}
+            {node.body &&
+              (revealed ? (
+                <p className="mt-4 whitespace-pre-wrap border-t border-border pt-3 text-sm text-muted">
+                  {node.body}
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRevealed(true)}
+                  className="mt-4 self-start rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm text-fg hover:bg-surface"
+                >
+                  Show the notes
+                </button>
+              ))}
+          </section>
         )}
 
         <button

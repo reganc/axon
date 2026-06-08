@@ -7,6 +7,7 @@ checkout belongs to the caller, then runs a bidirectional loop:
   client -> server : {type: subject|start, text}      start/continue a turn
                      {type: interrupt|answer, text}    barge-in (re-enters Tutor)
                      {type: pull_thread, node_id}      spawn a rabbit-hole
+                     {type: explain, node_id}          deep-dive a selected card
                      {type: close}                     end
   server -> client : StreamEvent JSON (say/ask/node.create/node.update/...)
 
@@ -52,6 +53,7 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
     cid = checkout_id
     inbox: asyncio.Queue = asyncio.Queue()
     turn: asyncio.Task | None = None
+    aux: asyncio.Task | None = None  # deep-dive stream; cancelled when superseded
 
     async def stream(agen) -> None:
         async for ev in agen:
@@ -75,6 +77,14 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
                 await stream(companion().pull_thread(cid, msg.get("node_id")))
             elif kind == "explore_question":
                 await stream(companion().explore_question(cid, msg.get("node_id")))
+            elif kind == "explain":
+                # Deep-dive on a selected card. Runs as a cancellable task so the
+                # receive loop keeps reading — opening another card supersedes it.
+                if aux and not aux.done():
+                    aux.cancel()
+                aux = asyncio.create_task(
+                    stream(companion().explain_node(cid, msg.get("node_id")))
+                )
             elif kind == "close":
                 break
             else:
@@ -86,8 +96,9 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
     except WebSocketDisconnect:
         pass
     finally:
-        if turn and not turn.done():
-            turn.cancel()
+        for task in (turn, aux):
+            if task and not task.done():
+                task.cancel()
         await _safe_close(ws)
 
 

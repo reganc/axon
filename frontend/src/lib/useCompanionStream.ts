@@ -99,6 +99,21 @@ export function useCompanionStream(
     },
     [send, setBusy],
   );
+  const explain = useCallback(
+    (nodeId: string) => {
+      setBusy(true);
+      send({ type: "explain", node_id: nodeId });
+    },
+    [send, setBusy],
+  );
 
-  return { connected, sendSubject, answer, interrupt, pullThread, exploreQuestion };
+  return {
+    connected,
+    sendSubject,
+    answer,
+    interrupt,
+    pullThread,
+    exploreQuestion,
+    explain,
+  };
 }

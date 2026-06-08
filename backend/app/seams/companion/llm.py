@@ -31,6 +31,17 @@ def _as_dicts(msgs: list[Msg]) -> list[dict]:
     return [{"role": m.role, "content": m.content} for m in msgs]
 
 
+def _sse_delta(data: str) -> str | None:
+    """Parse one SSE `data:` payload into a content delta, or None when the line
+    isn't a well-formed delta. The gateway interleaves non-delta lines (RAG/search
+    metadata, usage) into the stream; those must be skipped, not fatal."""
+    try:
+        choices = json.loads(data).get("choices") or []
+        return choices[0].get("delta", {}).get("content")
+    except (json.JSONDecodeError, AttributeError, IndexError, KeyError):
+        return None
+
+
 class GatewayChat:
     """The fast/local tier: the centralized llm-app gateway, OpenAI-compatible
     (`POST {base}/chat/completions`, Bearer auth, model alias `default`). Every
@@ -73,7 +84,7 @@ class GatewayChat:
                     data = line[len("data:") :].strip()
                     if data == "[DONE]":
                         break
-                    delta = json.loads(data)["choices"][0]["delta"].get("content")
+                    delta = _sse_delta(data)
                     if delta:
                         yield delta
 

@@ -114,3 +114,41 @@ async def test_pull_thread_spawns_rabbit_hole(seeded, seams):
         e.type == "edge.create" and e.data["edge"]["type"] == "rabbit_hole"
         for e in events
     )
+
+
+async def test_explain_node_streams_and_persists_materials(seeded, seams):
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "deep dive")
+
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    events = [e async for e in comp.explain_node(checkout.id, node.id)]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    # 1) the explanation streams as several say events pinned to the opened card
+    says = [e for e in events if e.type == "say"]
+    assert len(says) >= 2
+    assert all(e.data.get("node_id") == str(node.id) for e in says)
+
+    # 2) materials persist into the library as new nodes + edges back to the card
+    assert after > before
+    assert any(e.type == "node.update" for e in events)
+    assert any(e.type == "edge.create" for e in events)
+    assert events[-1].type == "done"
+
+    # a follow-up question landed as a `question` node linked `about` the concept
+    summary = await seams.content.get_node_by_key(
+        normalize_key(f"Key points: {node.title}")
+    )
+    assert summary is not None and summary.kind == "artifact"
+
+
+async def test_explain_node_strips_citation_markers(seeded, seams):
+    from app.seams.companion import _flush_sentences, _sanitize
+
+    assert _sanitize("Backprop is the chain rule [W2] in disguise [L1].") == (
+        "Backprop is the chain rule  in disguise ."
+    )
+    remaining, sentences = _flush_sentences("One sentence. A second one. tail")
+    assert sentences == ["One sentence.", "A second one."]
+    assert remaining.strip() == "tail"
