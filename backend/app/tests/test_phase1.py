@@ -145,10 +145,12 @@ def test_get_foundations_spine_ordered(client, seeded):
 
 def _foundations_sequence() -> list[str]:
     import json
-    from pathlib import Path
 
-    root = Path(__file__).resolve().parents[3]
-    data = json.loads((root / "artifacts" / "lecun_seed_graph.json").read_text())
+    from app.seams.ingestion import _resolve
+
+    # Use the app's own seed-path resolver so this works under both the repo
+    # layout and the container (cwd=/app, artifacts mounted at /app/artifacts).
+    data = json.loads(_resolve("artifacts/lecun_seed_graph.json").read_text())
     spine = next(s for s in data["spines"] if s["id"] == FOUNDATIONS_SPINE_ID)
     return spine["node_sequence"]
 
