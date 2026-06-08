@@ -4,17 +4,15 @@ Running list of deferred work and feature ideas. Newest at top of each section.
 
 ## Voice
 
-- [ ] **"Jarvis" wake word to arm the listener.** Add hands-free activation: a
-  call/utterance of "jarvis" wakes the listener so the mic input is open and
-  ready to accept voice direction — no click on the push-to-talk button. On the
-  wake word, cut off any TTS in progress (barge-in via `stopSpeaking()`) and open
-  the existing mic capture, then route the transcript through the panel's normal
-  answer/interrupt/subject logic. Likely approach: an always-on lightweight
-  keyword spotter (browser `SpeechRecognition` continuous mode, or a small
-  on-device wake-word model) that, on match, triggers `useMic.start()`. Make it
-  opt-in alongside the existing voice toggle, and gate by mic permission.
-  Builds on: `frontend/src/lib/useMic.ts`, `frontend/src/lib/voice.ts`,
-  `frontend/src/components/VoiceControls.tsx`.
+- [x] **"Jarvis" wake word to arm the listener.** Done. An always-on browser
+  `SpeechRecognition` keyword spotter (`frontend/src/lib/useWakeWord.ts`) listens
+  for "jarvis"; on match it barges in on TTS (`stopSpeaking()`) and arms the
+  existing mic capture, which now auto-stops on silence (RMS VAD added to
+  `useMic`) so it's fully hands-free. The transcript routes through the panel's
+  normal answer/interrupt/subject logic. Opt-in via a wake toggle in
+  `VoiceControls` (hidden where the API is unsupported, e.g. Firefox).
+  Follow-ups if wanted: a real on-device wake-word model (Porcupine/openWakeWord)
+  for fewer false fires than browser STT; tunable VAD thresholds in config.
 
 ## Self-augmenting library
 
