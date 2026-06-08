@@ -1,5 +1,6 @@
 // The single place `fetch` is used. All backend HTTP goes through here.
 import { getToken, clearSession } from "./auth";
+import type { VoiceConfig } from "./config";
 import type {
   Checkout,
   CheckoutSummary,
@@ -127,5 +128,7 @@ export const listCheckouts = () => request<CheckoutSummary[]>("/library/checkout
 
 export const getConversation = (checkoutId: string) =>
   request<StreamEvent[]>(`/library/checkout/${checkoutId}/conversation`);
+
+export const getVoiceConfig = () => request<VoiceConfig>("/voice/config");
 
 export { ApiError };

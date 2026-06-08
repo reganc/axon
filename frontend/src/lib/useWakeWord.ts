@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { voiceConfig } from "./config";
+import { DEFAULT_VOICE_CONFIG, type VoiceConfig } from "./config";
 
 // Minimal typing for the Web Speech API (not in the default DOM lib, and only
 // shipped by Chromium browsers behind the webkit prefix). We use it purely as an
@@ -36,24 +36,34 @@ function getCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-// Accepted wake phrases (default: "jarvis" + its common recognizer mishears),
-// word-boundary matched. Configurable via NEXT_PUBLIC_AXON_WAKE_PHRASE.
-const WAKE = new RegExp(`\\b(${voiceConfig.wake.phrase})\\b`);
+function wakeRegex(phrase: string): RegExp {
+  // Accepted phrases (default: "jarvis" + common recognizer mishears),
+  // word-boundary matched. Phrase comes from backend config.
+  return new RegExp(`\\b(${phrase})\\b`);
+}
 
 /**
  * Listen continuously for the wake word while `enabled`. On a match, fire
- * `onWake` once (debounced by a cooldown). Auto-restarts the recognizer when the
- * browser ends a session, and tears down cleanly when disabled/unmounted.
- * Returns `supported` so the UI can hide the control where the API is absent.
+ * `onWake` once (debounced by `cfg.cooldownMs`). Auto-restarts the recognizer
+ * when the browser ends a session, and tears down cleanly when
+ * disabled/unmounted. Returns `supported` so the UI can hide the control where
+ * the API is absent. Tuning (`cfg`) is read live via a ref, so a late config
+ * load takes effect without restarting the recognizer.
  */
-export function useWakeWord(enabled: boolean, onWake: () => void) {
+export function useWakeWord(
+  enabled: boolean,
+  onWake: () => void,
+  cfg: VoiceConfig["wake"] = DEFAULT_VOICE_CONFIG.wake,
+) {
   const [supported] = useState(() => getCtor() !== null);
   const [active, setActive] = useState(false);
   const recRef = useRef<SpeechRecognitionLike | null>(null);
   const enabledRef = useRef(enabled);
   const onWakeRef = useRef(onWake);
+  const cfgRef = useRef(cfg);
   const cooldownRef = useRef(false);
   onWakeRef.current = onWake;
+  cfgRef.current = cfg;
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -69,13 +79,14 @@ export function useWakeWord(enabled: boolean, onWake: () => void) {
       rec.lang = "en-US";
       rec.onresult = (ev) => {
         if (cooldownRef.current) return;
+        const re = wakeRegex(cfgRef.current.phrase);
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
           const alt = ev.results[i][0];
-          if (alt && WAKE.test(alt.transcript.toLowerCase())) {
+          if (alt && re.test(alt.transcript.toLowerCase())) {
             cooldownRef.current = true;
             setTimeout(() => {
               cooldownRef.current = false;
-            }, voiceConfig.wake.cooldownMs);
+            }, cfgRef.current.cooldownMs);
             onWakeRef.current();
             break;
           }
@@ -90,7 +101,7 @@ export function useWakeWord(enabled: boolean, onWake: () => void) {
         recRef.current = null;
         setActive(false);
         // Browser ends sessions on its own; restart while still enabled.
-        if (enabledRef.current) setTimeout(start, voiceConfig.wake.restartMs);
+        if (enabledRef.current) setTimeout(start, cfgRef.current.restartMs);
       };
       try {
         rec.start();

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { voiceConfig } from "@/lib/config";
 import { useMic } from "@/lib/useMic";
+import { useVoiceConfig } from "@/lib/useVoiceConfig";
 import { useWakeWord } from "@/lib/useWakeWord";
 import { transcribe } from "@/lib/voice";
 
@@ -16,12 +16,11 @@ interface Props {
 }
 
 const WAKE_PREF_KEY = "axon.voice.wake";
-// Hands-free capture thresholds come from config (NEXT_PUBLIC_AXON_VAD_*).
-const CAPTURE_OPTS = voiceConfig.vad;
 
 /** Speaker toggle (TTS), "Hey Jarvis" wake toggle, and a push-to-talk mic. The
  *  wake word arms the same mic capture hands-free. Colors are design tokens. */
 export function VoiceControls({ speakEnabled, onToggleSpeak, onText, onListenStart }: Props) {
+  const cfg = useVoiceConfig();
   const [wakeOn, setWakeOn] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
 
@@ -46,7 +45,7 @@ export function VoiceControls({ speakEnabled, onToggleSpeak, onText, onListenSta
     [onText],
   );
 
-  const mic = useMic(handleClip, CAPTURE_OPTS);
+  const mic = useMic(handleClip, cfg.vad);
   const busyMic = mic.recording || transcribing;
 
   // Wake fires -> cut off Jarvis and arm the mic (auto-stops on silence).
@@ -56,7 +55,7 @@ export function VoiceControls({ speakEnabled, onToggleSpeak, onText, onListenSta
   }, [mic, onListenStart]);
 
   // Suppress wake detection while we're capturing/transcribing (one mic at a time).
-  const wake = useWakeWord(wakeOn && !busyMic, onWake);
+  const wake = useWakeWord(wakeOn && !busyMic, onWake, cfg.wake);
 
   const toggleWake = () => {
     setWakeOn((prev) => {

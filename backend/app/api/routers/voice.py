@@ -96,3 +96,24 @@ async def voice_health() -> dict:
         "stt_device": s.stt_device,
         "stt_ready": stt_engine().ready,
     }
+
+
+@router.get("/config")
+async def voice_config() -> dict:
+    """Client-side voice tuning (VAD + wake word). The frontend fetches this on
+    mount so all knobs live in this service's .env, not a frontend rebuild. Keys
+    are camelCase to drop straight into the frontend config shape."""
+    s = get_settings()
+    return {
+        "vad": {
+            "autoStopSilenceMs": s.vad_silence_ms,
+            "maxMs": s.vad_max_ms,
+            "noSpeechMs": s.vad_no_speech_ms,
+            "silenceThreshold": s.vad_rms_threshold,
+        },
+        "wake": {
+            "cooldownMs": s.wake_cooldown_ms,
+            "restartMs": s.wake_restart_ms,
+            "phrase": s.wake_phrase,
+        },
+    }

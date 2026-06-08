@@ -109,6 +109,15 @@ class Settings(BaseSettings):
     stt_compute_type: str = "int8"  # "int8" (cpu) | "float16" (cuda)
     stt_beam_size: int = 1
     stt_language: str = "en"
+    # client-side voice tuning, served to the frontend via GET /voice/config so
+    # all tuning lives in one place (this .env), not a frontend rebuild.
+    vad_silence_ms: int = 900  # stop capture after this much trailing silence
+    vad_max_ms: int = 12000  # hard cap on one hands-free capture
+    vad_no_speech_ms: int = 6000  # bail if nothing is said after arming
+    vad_rms_threshold: float = 0.015  # amplitude (0..1) that counts as speech
+    wake_cooldown_ms: int = 2500  # debounce: one "Jarvis" fires once
+    wake_restart_ms: int = 300  # gap before restarting the recognizer
+    wake_phrase: str = "jarvis|jervis|jarvus|jarviss|service"  # accepted, |-sep
 
 
 @lru_cache

@@ -55,6 +55,22 @@ def test_health_is_unauthenticated_and_does_not_load_models(client):
     assert body["tts_ready"] is False and body["stt_ready"] is False
 
 
+def test_config_serves_tuning_for_the_frontend(client):
+    r = client.get("/voice/config")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # camelCase keys drop straight into the frontend VoiceConfig shape.
+    assert set(body["vad"]) == {
+        "autoStopSilenceMs",
+        "maxMs",
+        "noSpeechMs",
+        "silenceThreshold",
+    }
+    assert set(body["wake"]) == {"cooldownMs", "restartMs", "phrase"}
+    assert body["vad"]["autoStopSilenceMs"] == 900
+    assert "jarvis" in body["wake"]["phrase"]
+
+
 def test_tts_requires_auth(client):
     r = client.post("/voice/tts", json={"text": "hi"})
     assert r.status_code == 401
