@@ -42,10 +42,54 @@ def test_routing_local_tasks_never_hit_cloud():
 
 def test_routing_cloud_tasks_pick_models():
     r = RoutingPolicy(Settings())
-    assert r.route("plan").tier == "cloud" and "sonnet" in r.route("plan").model
-    assert r.route("ground").batch is True  # latency-tolerant -> batch
+    # merge_judgment permanently shapes the canonical graph -> strong model.
+    assert r.route("merge_judgment").tier == "cloud"
+    assert "sonnet" in r.route("merge_judgment").model
+    # research grounding and structuring/extraction run on the cheaper model.
+    assert "haiku" in r.route("ground").model
+    assert "haiku" in r.route("plan").model
     assert "haiku" in r.route("extract").model  # cheap cloud
+    assert r.route("ground").batch is True  # latency-tolerant -> batch
     assert r.route("classify").batch is False
+
+
+async def test_complete_honors_routed_model_for_cloud_task():
+    """The router picks the model per task; the live call must use it, not the
+    Anthropic backend's configured default. Regression: cheap/ground tasks used
+    to silently run on the Sonnet default while the meter billed them as Haiku."""
+
+    class _Spy:
+        def __init__(self) -> None:
+            self.models: list[str | None] = []
+
+        async def complete(self, msgs, *, model=None):
+            self.models.append(model)
+            return "grounded"
+
+    class _NoMeter:
+        async def record(self, **kwargs):
+            return 0.0
+
+    class _NoBudget:
+        async def over_soft_limit(self, **kwargs):
+            return False
+
+        async def spent(self, *args, **kwargs):
+            return 0.0
+
+    spy = _Spy()
+    controller = CostController(RoutingPolicy(Settings()), _NoMeter(), _NoBudget())
+    gw = LLMGateway(
+        Settings(anthropic_api_key="k", anthropic_model="claude-sonnet-4-6"),
+        DeterministicEmbedder(768),
+        anthropic_chat=spy,
+        controller=controller,
+    )
+    gw._fast = None
+
+    out = await gw.complete([Msg(role="user", content="x" * 40)], "reason", task="ground")
+    assert out == "grounded"
+    assert spy.models == ["claude-haiku-4-5"]  # routed Haiku, not the Sonnet default
 
 
 def test_draft_escalates_only_below_floor():

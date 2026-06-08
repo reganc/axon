@@ -87,8 +87,9 @@ class Settings(BaseSettings):
     miner_max_spans: int = 40  # safety cap on spans mined per source
 
     # cost control (specs/06): tiered routing + budgets + circuit breaker
-    model_reason: str = "claude-sonnet-4-6"  # default cloud reasoning model
-    model_cheap: str = "claude-haiku-4-5"  # cheap cloud tasks (extract/classify)
+    model_reason: str = "claude-sonnet-4-6"  # accuracy-critical cloud reasoning
+    model_cheap: str = "claude-haiku-4-5"  # cheap cloud tasks (extract/classify/plan)
+    model_ground: str = "claude-haiku-4-5"  # research grounding — Haiku is plenty
     escalate_floor: float = (
         0.6  # local draft below this confidence -> escalate to cloud
     )

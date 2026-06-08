@@ -49,14 +49,17 @@ Tier = Literal["local", "cloud"]
 
 _LOCAL_TASKS = {"narration", "ask", "recall", "embed", "draft", "hook"}
 _ESCALATABLE = {"draft", "hook"}  # a weak local draft may earn a cloud pass
-# cloud task -> (uses_cheap_model, batchable)
-_CLOUD_TASKS: dict[str, tuple[bool, bool]] = {
-    "extract": (True, True),
-    "classify": (True, False),
-    "curate": (True, True),
-    "plan": (False, False),
-    "merge_judgment": (False, False),
-    "ground": (False, True),
+# cloud task -> (settings field holding the model id, batchable). Each task names
+# its own model so cheap/structuring work (extract/classify/curate/plan) and
+# research grounding run on Haiku, while merge_judgment — which permanently
+# shapes the canonical graph — stays on the strong reasoning model.
+_CLOUD_TASKS: dict[str, tuple[str, bool]] = {
+    "extract": ("model_cheap", True),
+    "classify": ("model_cheap", False),
+    "curate": ("model_cheap", True),
+    "plan": ("model_cheap", False),
+    "ground": ("model_ground", True),
+    "merge_judgment": ("model_reason", False),
 }
 
 # Representative $/Mtok (input, output) — mid-2026 order of magnitude; the policy
@@ -116,8 +119,8 @@ class RoutingPolicy:
             ):
                 return Routed(tier="cloud", model=self._s.model_reason, batch=False)
             return Routed(tier="local", model=None, batch=False)
-        cheap, batchable = _CLOUD_TASKS[task]
-        model = self._s.model_cheap if cheap else self._s.model_reason
+        model_field, batchable = _CLOUD_TASKS[task]
+        model = getattr(self._s, model_field)
         return Routed(
             tier="cloud", model=model, batch=batchable and self._s.batch_enabled
         )

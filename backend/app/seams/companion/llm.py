@@ -55,7 +55,10 @@ class GatewayChat:
         self.model = model
         self.timeout = timeout
 
-    async def complete(self, msgs: list[Msg]) -> str:
+    async def complete(self, msgs: list[Msg], *, model: str | None = None) -> str:
+        # `model` is accepted for a uniform backend interface but ignored: the
+        # gateway resolves the shared `default` alias server-side and never
+        # exposes per-request model choice (see apps/CLAUDE.md).
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(
                 self.url,
@@ -105,10 +108,13 @@ class AnthropicChat:
         ]
         return (system or self._not_given), rest
 
-    async def complete(self, msgs: list[Msg]) -> str:
+    async def complete(self, msgs: list[Msg], *, model: str | None = None) -> str:
         system, rest = self._split(msgs)
         resp = await self._client.messages.create(
-            model=self.model, max_tokens=self.max_tokens, system=system, messages=rest
+            model=model or self.model,
+            max_tokens=self.max_tokens,
+            system=system,
+            messages=rest,
         )
         return "".join(b.text for b in resp.content if b.type == "text")
 
@@ -128,7 +134,7 @@ class FakeLLM:
     def __init__(self, handler: Callable[[list[Msg]], str] | None = None) -> None:
         self._handler = handler or (lambda _msgs: "OK")
 
-    async def complete(self, msgs: list[Msg]) -> str:
+    async def complete(self, msgs: list[Msg], *, model: str | None = None) -> str:
         return self._handler(msgs)
 
     async def stream(self, msgs: list[Msg]) -> AsyncIterator[str]:
@@ -212,8 +218,12 @@ class LLMGateway:
             effective = "reason" if routed.tier == "cloud" else "fast"
 
         backend = self._backend(effective)
+        # The router picked the model (e.g. Haiku for ground/extract, Sonnet for
+        # merge_judgment); honor it on the actual call. None -> the backend's own
+        # default (local gateway ignores it; Anthropic uses its configured model).
+        model = routed.model if routed is not None else None
         try:
-            result = await backend.complete(msgs)
+            result = await backend.complete(msgs, model=model)
         except Exception as exc:  # noqa: BLE001 - degrade, never crash a turn
             log.warning(
                 "llm complete failed on %s (%s); using fake",
