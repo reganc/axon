@@ -9,13 +9,34 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+from pathlib import Path
 
 import pytest
 
-# Env must be set before app.config's settings are first read (it is lru_cached).
-os.environ.setdefault(
-    "AXON_DATABASE_URL", "postgresql+asyncpg://axon:change-me@localhost:4102/axon"
+# The suite is DESTRUCTIVE — fixtures TRUNCATE the graph/overlay tables. It must
+# never touch the app's live database. Derive a dedicated `*_test` sibling from
+# whatever DB the app is configured for (or AXON_TEST_DATABASE_URL when given)
+# and force it into the environment *before* app.config's lru_cached settings are
+# first read, so the TestClient app, the seam fixtures, and the raw-SQL helpers
+# all share the one isolated DB.
+_DEFAULT_DB = "postgresql+asyncpg://axon:change-me@localhost:4102/axon"
+
+
+def _derive_test_url(url: str) -> str:
+    m = re.match(r"(?P<prefix>.*/)(?P<db>[^/?]+)(?P<query>\?.*)?$", url)
+    if not m:
+        return url
+    db = m.group("db")
+    if not db.endswith("_test"):
+        db = f"{db}_test"
+    return f"{m.group('prefix')}{db}{m.group('query') or ''}"
+
+
+_TEST_DB_URL = os.environ.get("AXON_TEST_DATABASE_URL") or _derive_test_url(
+    os.environ.get("AXON_DATABASE_URL", _DEFAULT_DB)
 )
+os.environ["AXON_DATABASE_URL"] = _TEST_DB_URL
 os.environ.setdefault("AXON_OLLAMA_BASE_URL", "http://localhost:11434")
 os.environ.setdefault("AXON_JWT_SECRET", "test-secret-not-for-prod")
 os.environ.setdefault("AXON_DB_USE_NULLPOOL", "true")
@@ -26,6 +47,42 @@ from sqlalchemy.ext.asyncio import create_async_engine  # noqa: E402
 
 DB_URL = os.environ["AXON_DATABASE_URL"]
 OLLAMA_URL = os.environ["AXON_OLLAMA_BASE_URL"]
+
+
+def _bootstrap_test_db() -> None:
+    """Create the dedicated test database and apply the schema if it's missing,
+    so `pytest` works out of the box without ever provisioning live data."""
+    import asyncpg
+
+    dsn = DB_URL.replace("postgresql+asyncpg://", "postgresql://")
+    db_name = re.match(r".*/([^/?]+)(\?.*)?$", dsn).group(1)
+    maint = re.sub(r"/[^/?]+(\?.*)?$", "/postgres", dsn, count=1)
+    schema_path = Path(__file__).resolve().parents[2] / "artifacts" / "schema.sql"
+
+    async def go() -> None:
+        admin = await asyncpg.connect(maint)
+        try:
+            if not await admin.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = $1", db_name
+            ):
+                await admin.execute(f'CREATE DATABASE "{db_name}"')
+        finally:
+            await admin.close()
+        conn = await asyncpg.connect(dsn)
+        try:
+            empty = await conn.fetchval("SELECT to_regclass('public.canonical_nodes')")
+            if empty is None and schema_path.exists():
+                await conn.execute(schema_path.read_text())
+        finally:
+            await conn.close()
+
+    asyncio.run(go())
+
+
+try:
+    _bootstrap_test_db()
+except Exception:  # noqa: BLE001 - server down -> DB tests skip via DB_AVAILABLE
+    pass
 
 FOUNDATIONS_SPINE_ID = "69f5cb6a-449a-518d-8a5b-6b182a1ac320"
 
@@ -99,6 +156,15 @@ SEED_AUTHOR = "aaaaaaaa-0000-0000-0000-000000000001"
 async def reset_graph() -> None:
     """Truncate graph + overlay tables — keeps the suite repeatable on a
     persistent dev DB (first-load insert counts stay deterministic)."""
+    # Hard stop: this TRUNCATEs (CASCADE). Never run it against a live DB. The
+    # header forces a `*_test` database; this is the belt-and-braces check in
+    # case AXON_DATABASE_URL is ever pointed somewhere destructive.
+    db_name = DB_URL.rsplit("/", 1)[-1].split("?")[0]
+    if not db_name.endswith("_test"):
+        raise RuntimeError(
+            f"refusing to TRUNCATE non-test database {db_name!r}; point "
+            "AXON_TEST_DATABASE_URL (or AXON_DATABASE_URL) at a *_test database"
+        )
     engine = create_async_engine(DB_URL, poolclass=NullPool)
     try:
         async with engine.begin() as conn:
