@@ -3,29 +3,45 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthGuard } from "@/components/AuthGuard";
-import { CompanionPanel } from "@/components/CompanionPanel";
+import { CardDeck } from "@/components/CardDeck";
+import { CardDetail } from "@/components/CardDetail";
+import { CompanionBar } from "@/components/CompanionBar";
 import { GraphCanvas } from "@/components/GraphCanvas";
-import { NodeView } from "@/components/NodeView";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getConversation, getSpine } from "@/lib/api";
 import { useCompanionStream } from "@/lib/useCompanionStream";
 import { speak, stopSpeaking } from "@/lib/voice";
-import { useGraphStore } from "@/store/graphStore";
+import { type GNode, useGraphStore } from "@/store/graphStore";
 import { useTranscriptStore } from "@/store/transcriptStore";
 
 const VOICE_PREF_KEY = "axon.voice.speak";
+type View = "cards" | "map";
 
 function LearnInner({ checkoutId }: { checkoutId: string }) {
   const initGraph = useGraphStore((s) => s.init);
   const initTranscript = useTranscriptStore((s) => s.init);
+  const select = useGraphStore((s) => s.select);
+  const selectedId = useGraphStore((s) => s.selectedId);
   const [title, setTitle] = useState<string | null>(null);
   const [speakEnabled, setSpeakEnabled] = useState(false);
+  const [view, setView] = useState<View>("cards");
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       setSpeakEnabled(localStorage.getItem(VOICE_PREF_KEY) === "on");
     }
   }, []);
+
+  // In map view, clicking a graph node opens the same reader as a card.
+  useEffect(() => {
+    if (view === "map" && selectedId) setOpenId(selectedId);
+  }, [view, selectedId]);
+
+  const closeDetail = () => {
+    setOpenId(null);
+    select(null);
+  };
 
   const toggleSpeak = () => {
     setSpeakEnabled((prev) => {
@@ -79,6 +95,12 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     }
   }, [checkoutId, initGraph, initTranscript]);
 
+  const onExplore = (node: GNode) => {
+    if (node.kind === "question") exploreQuestion(node.id);
+    else pullThread(node.id);
+    closeDetail();
+  };
+
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center justify-between border-b border-border bg-surface px-4 py-2">
@@ -87,31 +109,46 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
             Library
           </Link>
           <span className="text-muted">/</span>
-          <span className="font-medium text-fg">{title ?? "Learning canvas"}</span>
+          <span className="font-medium text-fg">{title ?? "Learning"}</span>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-full border border-border bg-surface p-0.5 text-xs">
+            {(["cards", "map"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={`rounded-full px-3 py-1 capitalize transition ${
+                  view === v ? "bg-accent text-accent-fg" : "text-muted hover:text-fg"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+          <ThemeToggle />
+        </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1">
+      <main className="min-h-0 flex-1">
+        {view === "cards" ? (
+          <CardDeck onOpen={setOpenId} onExplore={onExplore} subjectHint={title ?? ""} />
+        ) : (
           <GraphCanvas />
-        </div>
-        <aside className="flex w-[380px] flex-col border-l border-border">
-          <div className="h-1/2 min-h-0 overflow-hidden border-b border-border bg-surface">
-            <NodeView onPullThread={pullThread} onExploreQuestion={exploreQuestion} />
-          </div>
-          <div className="h-1/2 min-h-0">
-            <CompanionPanel
-              connected={connected}
-              onSubject={sendSubject}
-              onAnswer={answer}
-              onInterrupt={interrupt}
-              speakEnabled={speakEnabled}
-              onToggleSpeak={toggleSpeak}
-            />
-          </div>
-        </aside>
-      </div>
+        )}
+      </main>
+
+      <CompanionBar
+        connected={connected}
+        onSubject={sendSubject}
+        onAnswer={answer}
+        onInterrupt={interrupt}
+        speakEnabled={speakEnabled}
+        onToggleSpeak={toggleSpeak}
+      />
+
+      {openId && <CardDetail nodeId={openId} onClose={closeDetail} onExplore={onExplore} />}
     </div>
   );
 }

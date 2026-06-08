@@ -19,6 +19,7 @@ const config: Config = {
         spine: "var(--spine)",
         "node-bg": "var(--node-bg)",
         warn: "var(--warn)",
+        overlay: "var(--overlay)",
       },
     },
   },

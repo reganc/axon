@@ -46,6 +46,7 @@ services:
       cache: { condition: service_healthy }
     volumes:
       - voice_models:/models/voice   # Piper + Whisper model cache (AXON_VOICE_MODEL_DIR)
+      - ./artifacts:/app/artifacts:ro  # seed graph + schema for /ingest/seed and tests
     networks: [axon_net]
 
 networks:
