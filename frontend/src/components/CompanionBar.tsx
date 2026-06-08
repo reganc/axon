@@ -1,7 +1,7 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { VoiceControls } from "@/components/VoiceControls";
-import { stopSpeaking } from "@/lib/voice";
+import { stopSpeaking, subscribeSpeaking } from "@/lib/voice";
 import { useTranscriptStore } from "@/store/transcriptStore";
 
 interface Props {
@@ -28,6 +28,11 @@ export function CompanionBar({
   const ask = useTranscriptStore((s) => s.ask);
   const busy = useTranscriptStore((s) => s.busy);
   const [text, setText] = useState("");
+  const [speaking, setSpeaking] = useState(false);
+
+  // Surface a one-tap Stop only while the narrator is actually talking — a
+  // barge-in that doesn't disable voice (the speaker toggle) or open the mic.
+  useEffect(() => subscribeSpeaking(setSpeaking), []);
 
   // The companion's latest spoken line — shown as a subtle subtitle, not a log.
   const lastSay = useMemo(() => {
@@ -82,6 +87,17 @@ export function CompanionBar({
           onText={route}
           onListenStart={stopSpeaking}
         />
+        {speaking && (
+          <button
+            type="button"
+            onClick={stopSpeaking}
+            title="Stop narration"
+            aria-label="Stop narration"
+            className="rounded-md p-1.5 text-warn hover:bg-surface-2"
+          >
+            <StopIcon />
+          </button>
+        )}
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -104,5 +120,13 @@ export function CompanionBar({
         </span>
       </div>
     </div>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
   );
 }
