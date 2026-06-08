@@ -7,7 +7,7 @@ test("a conversation is durable and the session is resumable", async ({ page }) 
   // talk to the companion — the stream is persisted server-side as it streams
   await page.getByPlaceholder("Teach me about…").fill("durability test topic");
   await page.getByRole("button", { name: "Send" }).click();
-  const say = page.getByText(/new idea|seen this/i).first();
+  const say = page.getByText(/some items you might find interesting/i);
   await expect(say).toBeVisible({ timeout: 20000 });
 
   // back to the home — the session appears under "Continue a session"
@@ -21,6 +21,7 @@ test("a conversation is durable and the session is resumable", async ({ page }) 
   await sessions.getByText("The Foundations").first().click();
   await expect(page).toHaveURL(/\/learn\//);
 
-  // the transcript is rebuilt from the durable server-side log
-  await expect(page.getByText(/new idea|seen this/i).first()).toBeVisible({ timeout: 15000 });
+  // the session is rebuilt from the durable server-side log: the generated
+  // card(s) come back even with the local cache cleared
+  await expect(page.getByTestId("concept-card").first()).toBeVisible({ timeout: 15000 });
 });
