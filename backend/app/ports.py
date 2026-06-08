@@ -205,8 +205,18 @@ class Msg(BaseModel):
 
 class StreamEvent(BaseModel):
     # The one stream the Tutor produces; the frontend demuxes into voice + canvas.
+    # `discuss` carries one turn of a node-scoped conversation (role + text); the
+    # learner's own turn is echoed as `discuss` so the durable log replays both
+    # sides of the chat.
     type: Literal[
-        "say", "ask", "node.create", "node.update", "edge.create", "status", "done"
+        "say",
+        "ask",
+        "discuss",
+        "node.create",
+        "node.update",
+        "edge.create",
+        "status",
+        "done",
     ]
     data: dict = Field(default_factory=dict)
 
@@ -266,6 +276,9 @@ class CompanionPort(Protocol):
     ) -> AsyncIterator[StreamEvent]: ...
     def explain_node(
         self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]: ...
+    def discuss(
+        self, checkout_id: UUID, node_id: UUID, message: str
     ) -> AsyncIterator[StreamEvent]: ...
 
 

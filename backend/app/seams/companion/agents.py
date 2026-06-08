@@ -16,7 +16,14 @@ from ...ports import CandidateNode, LLMPort, Msg, Node
 
 log = logging.getLogger("axon.agents")
 
-__all__ = ["Planner", "NodeGenerator", "Researcher", "Elaborator", "parse_json"]
+__all__ = [
+    "Planner",
+    "NodeGenerator",
+    "Researcher",
+    "Elaborator",
+    "Conversationalist",
+    "parse_json",
+]
 
 
 def _clamp01(x: float) -> float:
@@ -262,3 +269,96 @@ class Elaborator:
                     )
                 )
         return out
+
+
+class Conversationalist:
+    """Node-scoped, multi-turn discussion (tier=fast).
+
+    `reply` streams a spoken-style answer to a learner's follow-up, given the
+    prior turns of the discussion as continuity. `extract_concept` decides whether
+    the exchange surfaced a *genuinely new* concept worth its own card — the
+    auto-accrete trigger — returning a `CandidateNode` (its title seeds the normal
+    reuse-or-generate path) or `None` when the turn was only a clarification.
+    """
+
+    def __init__(self, llm: LLMPort, settings: Settings | None = None) -> None:
+        self._llm = llm
+        self._s = settings or get_settings()
+
+    def reply(
+        self, node: Node, history: list[dict], question: str
+    ) -> AsyncIterator[str]:
+        convo = "\n".join(f"{t['role']}: {t['text']}" for t in history) or "(none yet)"
+        msgs = [
+            Msg(
+                role="system",
+                content=(
+                    "You are AXON's Tutor in an ongoing spoken conversation with one "
+                    "learner about a specific concept. Answer their follow-up directly "
+                    "and build on what was already said — don't repeat it. Flowing "
+                    "spoken prose, no markdown, no headings, no lists, no citations."
+                ),
+            ),
+            Msg(
+                role="user",
+                content=(
+                    f"TASK: discuss\nConcept: {node.title}\n"
+                    f"Notes: {node.body or node.hook or ''}\n"
+                    f"Conversation so far:\n{convo}\n"
+                    f"Learner asks: {question}\n"
+                    "Answer just this, picking up the thread."
+                ),
+            ),
+        ]
+        return self._llm.stream(msgs, "fast")
+
+    async def extract_concept(
+        self,
+        node: Node,
+        question: str,
+        answer: str,
+        *,
+        checkout_id=None,
+        user_id=None,
+    ) -> CandidateNode | None:
+        msgs = [
+            Msg(
+                role="system",
+                content=(
+                    "You decide whether a tutoring exchange introduced a NEW, distinct "
+                    "concept that deserves its own knowledge-graph card — as opposed to "
+                    "merely clarifying or rephrasing the concept already under "
+                    "discussion. Be conservative: only a genuinely separate idea counts."
+                ),
+            ),
+            Msg(
+                role="user",
+                content=(
+                    f"TASK: extract_concept\nCurrent concept: {node.title}\n"
+                    f"Learner asked: {question}\n"
+                    f"Tutor answered: {answer}\n"
+                    "Return JSON only. If a genuinely new concept emerged: "
+                    '{"new_concept": true, "title": "concise concept title", '
+                    '"hook": "one-line curiosity hook", "body": "2-4 sentences"}. '
+                    'Otherwise: {"new_concept": false}.'
+                ),
+            ),
+        ]
+        data = parse_json(
+            await self._llm.complete(
+                msgs, "fast", task="discuss", checkout_id=checkout_id, user_id=user_id
+            )
+        )
+        data = data if isinstance(data, dict) else {}
+        title = str(data.get("title") or "").strip()
+        if not data.get("new_concept") or not title:
+            return None
+        return CandidateNode(
+            title=title,
+            kind="concept",
+            hook=(data.get("hook") or None),
+            body=(data.get("body") or None),
+            origin="ai_generated",
+            source_ref=f"companion/discuss/{node.id}",
+            confidence=0.5,
+        )

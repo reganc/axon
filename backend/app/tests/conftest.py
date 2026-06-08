@@ -275,6 +275,26 @@ def scripted_handler(plan: list[str], confidence: float = 0.8):
                 f"Let's dig into {concept}. The core intuition is simple. "
                 f"Here is a concrete example. And this is why it matters."
             )
+        if "TASK: discuss" in user:
+            return (
+                "Good follow-up. Here is the heart of it. "
+                "And that connects to the bigger picture."
+            )
+        if "TASK: extract_concept" in user:
+            # A follow-up prefixed "NEW:" surfaces a fresh concept (auto-accrete);
+            # anything else is treated as a clarification (stays ephemeral talk).
+            q = _between(user, "Learner asked:", "\n")
+            if q.startswith("NEW:"):
+                title = q[len("NEW:") :].strip()
+                return json.dumps(
+                    {
+                        "new_concept": True,
+                        "title": title,
+                        "hook": f"Why does {title} matter?",
+                        "body": f"A short take on {title}.",
+                    }
+                )
+            return json.dumps({"new_concept": False})
         if "TASK: materials" in user:
             concept = _between(user, "Concept:", "\n") or "concept"
             return json.dumps(

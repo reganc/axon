@@ -131,6 +131,13 @@ export function useCompanionStream(
     },
     [send, setBusy],
   );
+  const discuss = useCallback(
+    (nodeId: string, text: string) => {
+      setBusy(true);
+      send({ type: "discuss", node_id: nodeId, text });
+    },
+    [send, setBusy],
+  );
 
   return {
     connected,
@@ -141,5 +148,6 @@ export function useCompanionStream(
     pullThread,
     exploreQuestion,
     explain,
+    discuss,
   };
 }

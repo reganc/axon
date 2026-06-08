@@ -11,18 +11,25 @@ interface Props {
   onExplore: (node: GNode) => void;
   /** Start a streamed, spoken deep-dive on this card. */
   onDeepDive: (nodeId: string) => void;
+  /** Ask a node-scoped follow-up — keeps the conversation on this card. */
+  onDiscuss: (nodeId: string, text: string) => void;
 }
 
 /** Focused reader for one card. Opening it asks the companion for a streamed,
  *  conversational deep-dive (typed out live, spoken if voice is on), and shows
- *  the canonical notes underneath. New study materials it generates appear as
- *  cards in the deck. A lightbox over the deck — close on Esc/backdrop. */
-export function CardDetail({ nodeId, onClose, onExplore, onDeepDive }: Props) {
+ *  the canonical notes underneath. Below that, a discussion thread: ask a
+ *  follow-up about *this* card and the companion answers in place — and when an
+ *  answer surfaces a genuinely new concept it lands as a fresh card in the deck.
+ *  A lightbox over the deck — close on Esc/backdrop. */
+export function CardDetail({ nodeId, onClose, onExplore, onDeepDive, onDiscuss }: Props) {
   const node = useGraphStore((s) => s.nodes[nodeId]);
   const deepDive = useTranscriptStore((s) => s.deepDives[nodeId]);
+  const thread = useTranscriptStore((s) => s.discussions[nodeId]);
   const busy = useTranscriptStore((s) => s.busy);
   const [revealed, setRevealed] = useState(false);
+  const [followUp, setFollowUp] = useState("");
   const requested = useRef<Set<string>>(new Set());
+  const threadEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setRevealed(false), [nodeId]);
   useEffect(() => {
@@ -41,8 +48,22 @@ export function CardDetail({ nodeId, onClose, onExplore, onDeepDive }: Props) {
     onDeepDive(nodeId);
   }, [nodeId, node, isQuestion, deepDive, onDeepDive]);
 
+  // Keep the newest turn in view as the answer streams in.
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ block: "nearest" });
+  }, [thread]);
+
   if (!node) return null;
   const diving = busy && !deepDive;
+  const awaitingReply =
+    busy && thread !== undefined && thread.length > 0 && thread[thread.length - 1].role === "learner";
+
+  const submitFollowUp = () => {
+    const v = followUp.trim();
+    if (!v) return;
+    onDiscuss(nodeId, v);
+    setFollowUp("");
+  };
 
   return (
     <div
@@ -102,6 +123,49 @@ export function CardDetail({ nodeId, onClose, onExplore, onDeepDive }: Props) {
                   Show the notes
                 </button>
               ))}
+          </section>
+        )}
+
+        {!isQuestion && (
+          <section className="mt-5 border-t border-border pt-4" aria-label="Discussion">
+            {thread && thread.length > 0 && (
+              <ul className="mb-3 flex flex-col gap-2">
+                {thread.map((turn, i) => (
+                  <li
+                    key={`${turn.role}-${i}`}
+                    className={
+                      turn.role === "learner"
+                        ? "self-end rounded-2xl rounded-br-sm bg-accent px-3 py-2 text-sm text-accent-fg"
+                        : "self-start rounded-2xl rounded-bl-sm bg-surface-2 px-3 py-2 text-sm text-fg"
+                    }
+                  >
+                    {turn.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {awaitingReply && (
+              <p className="mb-2 animate-pulse text-sm italic text-muted">Jarvis is thinking…</p>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                value={followUp}
+                onChange={(e) => setFollowUp(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submitFollowUp()}
+                disabled={node.optimistic}
+                placeholder="Ask a follow-up about this…"
+                aria-label="Ask a follow-up about this card"
+                className="flex-1 rounded-full border border-border bg-bg px-4 py-2 text-sm text-fg outline-none focus:border-accent disabled:opacity-40"
+              />
+              <button
+                type="button"
+                onClick={submitFollowUp}
+                disabled={node.optimistic || !followUp.trim()}
+                className="rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-fg disabled:opacity-40"
+              >
+                Ask
+              </button>
+            </div>
           </section>
         )}
 

@@ -178,6 +178,56 @@ async def test_explain_node_streams_and_persists_materials(seeded, seams):
     assert summary is not None and summary.kind == "artifact"
 
 
+async def test_discuss_clarification_stays_ephemeral(seeded, seams):
+    """A plain follow-up streams a spoken answer pinned to the card and records a
+    `discussed` interaction, but accretes no new node (it was just a clarification)."""
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "discussion")
+
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    events = [
+        e async for e in comp.discuss(checkout.id, node.id, "Can you say that simpler?")
+    ]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    # learner turn is echoed for replay; the answer streams as say events on the card
+    assert any(e.type == "discuss" and e.data.get("role") == "learner" for e in events)
+    says = [e for e in events if e.type == "say"]
+    assert len(says) >= 2
+    assert all(e.data.get("node_id") == str(node.id) for e in says)
+    # a clarification creates nothing
+    assert after == before
+    assert not any(e.type in ("node.create", "node.update") for e in events)
+    assert events[-1].type == "done"
+
+
+async def test_discuss_new_concept_accretes_a_linked_card(seeded, seams):
+    """A follow-up that surfaces a genuinely new concept canonicalizes into a new
+    card linked back to the source by an `elaborates` edge (one thing leads to
+    another), through the same chokepoint as every other generated node."""
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "discussion")
+
+    new_title = "Synthetic discuss concept zeta"
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    events = [e async for e in comp.discuss(checkout.id, node.id, f"NEW: {new_title}")]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    assert after > before
+    assert any(e.type == "node.create" for e in events)
+    assert any(e.type == "node.update" for e in events)  # gap -> canonicalize
+    assert any(
+        e.type == "edge.create" and e.data["edge"]["type"] == "elaborates"
+        for e in events
+    )
+    # the new concept landed in the library, linked off the discussed card
+    fresh = await seams.content.get_node_by_key(normalize_key(new_title))
+    assert fresh is not None
+    assert events[-1].type == "done"
+
+
 async def test_explain_node_strips_citation_markers(seeded, seams):
     from app.seams.companion import _flush_sentences, _sanitize
 

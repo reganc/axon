@@ -8,6 +8,7 @@ checkout belongs to the caller, then runs a bidirectional loop:
                      {type: interrupt|answer, text}    barge-in (re-enters Tutor)
                      {type: pull_thread, node_id}      spawn a rabbit-hole
                      {type: explain, node_id}          deep-dive a selected card
+                     {type: discuss, node_id, text}    node-scoped follow-up chat
                      {type: close}                     end
   server -> client : StreamEvent JSON (say/ask/node.create/node.update/...)
 
@@ -95,6 +96,19 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
                     aux.cancel()
                 aux = asyncio.create_task(
                     stream(companion().explain_node(cid, msg.get("node_id")))
+                )
+            elif kind == "discuss":
+                # A node-scoped follow-up. Shares the cancellable aux slot with the
+                # deep-dive, so a new question (or opening another card) supersedes
+                # an in-flight answer — barge-in — while the receive loop drains.
+                if aux and not aux.done():
+                    aux.cancel()
+                aux = asyncio.create_task(
+                    stream(
+                        companion().discuss(
+                            cid, msg.get("node_id"), msg.get("text", "")
+                        )
+                    )
                 )
             elif kind == "close":
                 break

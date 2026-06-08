@@ -63,6 +63,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     pullThread,
     exploreQuestion,
     explain,
+    discuss,
   } = useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
 
   useEffect(() => {
@@ -180,6 +181,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
           onClose={closeDetail}
           onExplore={onExplore}
           onDeepDive={explain}
+          onDiscuss={discuss}
         />
       )}
     </div>

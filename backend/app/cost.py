@@ -33,6 +33,7 @@ from .tables import usage_events
 TaskKind = Literal[
     "narration",
     "ask",
+    "discuss",  # node-scoped follow-up chat
     "recall",
     "embed",
     "draft",
@@ -47,12 +48,12 @@ TaskKind = Literal[
 
 Tier = Literal["local", "cloud"]
 
-_LOCAL_TASKS = {"narration", "ask", "recall", "embed", "draft", "hook"}
+_LOCAL_TASKS = {"narration", "ask", "discuss", "recall", "embed", "draft", "hook"}
 _ESCALATABLE = {"draft", "hook"}  # a weak local draft may earn a cloud pass
 # Fast-tier *chat* tasks: redirected to the cheap cloud model when
 # settings.fast_tier == "cloud". Excludes embed (always Ollama) and recall
 # (scheduling, not an LLM chat call).
-_FAST_CHAT_TASKS = {"narration", "ask", "draft", "hook"}
+_FAST_CHAT_TASKS = {"narration", "ask", "discuss", "draft", "hook"}
 # cloud task -> (settings field holding the model id, batchable). Each task names
 # its own model so cheap/structuring work (extract/classify/curate/plan) and
 # research grounding run on Haiku, while merge_judgment — which permanently

@@ -24,7 +24,13 @@ from uuid import UUID, uuid4
 from ...config import Settings, get_settings
 from ...ports import CandidateNode, InteractionEvent, Node, StreamEvent
 from ..ingestion import normalize_key
-from .agents import Elaborator, NodeGenerator, Planner, Researcher
+from .agents import (
+    Conversationalist,
+    Elaborator,
+    NodeGenerator,
+    Planner,
+    Researcher,
+)
 from .llm import FakeLLM, GatewayChat, LLMGateway  # noqa: F401  (re-exported)
 
 log = logging.getLogger("axon.companion")
@@ -97,6 +103,18 @@ def _candidate_payload(c: CandidateNode) -> dict:
     }
 
 
+def _edge_event(edge) -> StreamEvent:
+    return _ev(
+        "edge.create",
+        edge={
+            "id": str(edge.id),
+            "src_node": str(edge.src_node),
+            "dst_node": str(edge.dst_node),
+            "type": edge.type,
+        },
+    )
+
+
 class Companion:
     """CompanionPort. Drives the in-session event stream."""
 
@@ -120,6 +138,7 @@ class Companion:
         self._generator = NodeGenerator(llm)
         self._researcher = Researcher(llm, self._s)
         self._elaborator = Elaborator(llm, self._s)
+        self._conversationalist = Conversationalist(llm, self._s)
 
     # -- main loop ------------------------------------------------------------
 
@@ -375,6 +394,96 @@ class Companion:
             )
         )
         yield _ev("done", nodes=produced)
+
+    async def discuss(
+        self, checkout_id: UUID, node_id: UUID, message: str
+    ) -> AsyncIterator[StreamEvent]:
+        """A node-scoped, multi-turn follow-up — the discussion layer.
+
+        Streams a conversational answer pinned to the card (spoken if voice is on),
+        carrying the prior turns of this card's chat as continuity. If the exchange
+        surfaces a *genuinely new* concept, it accretes as a linked card through the
+        canonicalize chokepoint (reusing an existing node when the library already
+        holds it); pure clarifications stay ephemeral talk. The learner's own turn
+        is echoed as a `discuss` event so the durable log replays both sides.
+        """
+        cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
+        owner = await self._library.checkout_owner(cid)
+        node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
+
+        # History before the echo, so the current message isn't double-counted.
+        history = await self._discussion_history(cid, nid)
+        yield _ev("discuss", node_id=str(nid), role="learner", text=message)
+
+        # 1) streamed answer — whole sentences so TTS reads naturally; pinned to
+        #    the card via node_id (same path the deep-dive narration uses).
+        buf = ""
+        parts: list[str] = []
+        async for chunk in self._conversationalist.reply(node, history, message):
+            buf += chunk
+            buf, sentences = _flush_sentences(buf)
+            for s in sentences:
+                parts.append(s)
+                yield _ev("say", text=s, node_id=str(nid))
+        tail = _sanitize(buf).strip()
+        if tail:
+            parts.append(tail)
+            yield _ev("say", text=tail, node_id=str(nid))
+        answer = " ".join(parts)
+
+        await self._learning.record(
+            InteractionEvent(
+                checkout_id=cid,
+                node_id=nid,
+                event_type="discussed",
+                payload={"message": message},
+            )
+        )
+
+        # 2) auto-accrete: did the exchange surface a genuinely new concept? If so,
+        #    build it (reuse-or-generate+ground) and link it back to this card.
+        candidate = await self._conversationalist.extract_concept(
+            node, message, answer, checkout_id=cid, user_id=owner
+        )
+        if candidate is not None:
+            new_node, events = await self._materialize(
+                cid, candidate.title, node.title, user_id=owner
+            )
+            for e in events:
+                yield e
+            if new_node.id != nid:
+                edge = await self._content.add_edge(
+                    new_node.id, nid, "elaborates", origin="ai_generated"
+                )
+                yield _edge_event(edge)
+            await self._learning.record(
+                InteractionEvent(
+                    checkout_id=cid,
+                    node_id=new_node.id,
+                    event_type="rabbit_hole_followed",
+                    payload={"via": "discuss"},
+                )
+            )
+        yield _ev("done")
+
+    async def _discussion_history(self, cid: UUID, nid: UUID) -> list[dict]:
+        """Reconstruct this card's prior turns from the durable conversation log:
+        the learner's `discuss` turns and the Tutor's `say` lines pinned to the
+        node (deep-dive narration + earlier answers), in order. Consecutive Tutor
+        sentences collapse into one turn so the model sees coherent exchanges."""
+        events = await self._library.get_conversation(cid)
+        target = str(nid)
+        turns: list[dict] = []
+        for ev in events:
+            if ev.type == "discuss" and ev.data.get("node_id") == target:
+                turns.append({"role": "learner", "text": ev.data.get("text", "")})
+            elif ev.type == "say" and ev.data.get("node_id") == target:
+                text = ev.data.get("text", "")
+                if turns and turns[-1]["role"] == "tutor":
+                    turns[-1]["text"] += " " + text
+                else:
+                    turns.append({"role": "tutor", "text": text})
+        return turns
 
     # -- per-step: reuse or generate -----------------------------------------
 

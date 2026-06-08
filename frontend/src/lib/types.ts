@@ -85,6 +85,12 @@ export type StreamEvent =
   // `node_id` is set on deep-dive narration so it can be pinned to the open card.
   | { type: "say"; data: { text: string; node_id?: string } }
   | { type: "ask"; data: { prompt: string; options?: string[] } }
+  // One turn of a node-scoped discussion. The learner's own turn is echoed so the
+  // durable log replays both sides; tutor answers stream back as `say` events.
+  | {
+      type: "discuss";
+      data: { node_id: string; role: "learner" | "tutor"; text: string };
+    }
   | { type: "node.create"; data: { temp_id: string; node: Partial<NodeDTO>; reused?: boolean } }
   | {
       type: "node.update";
@@ -102,4 +108,5 @@ export type ClientMessage =
   | { type: "pull_thread"; node_id: string }
   | { type: "explore_question"; node_id: string }
   | { type: "explain"; node_id: string }
+  | { type: "discuss"; node_id: string; text: string }
   | { type: "close" };
