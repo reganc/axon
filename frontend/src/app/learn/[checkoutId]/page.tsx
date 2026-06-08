@@ -56,6 +56,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
 
   const {
     connected,
+    fatal,
     sendSubject,
     answer,
     interrupt,
@@ -107,6 +108,24 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     else pullThread(node.id);
     closeDetail();
   };
+
+  if (fatal) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-bg px-6 text-center">
+        <p className="text-lg font-medium text-fg">{fatal}</p>
+        <p className="max-w-md text-sm text-muted">
+          This learning session can&apos;t be reopened. Start a new one from the
+          library.
+        </p>
+        <Link
+          href="/library"
+          className="rounded-full bg-accent px-4 py-2 text-sm text-accent-fg"
+        >
+          Back to Library
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen flex-col">

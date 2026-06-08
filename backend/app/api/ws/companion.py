@@ -35,6 +35,12 @@ _POLICY_VIOLATION = 1008
 
 @router.websocket("/ws/companion/{checkout_id}")
 async def companion_ws(ws: WebSocket, checkout_id: UUID):
+    # Accept first, then validate. Closing *before* accept surfaces to browsers as
+    # an opaque 1006 abnormal-closure with no code or reason, so clients can't tell
+    # a permanently-dead checkout (retry is pointless) from a transient blip and
+    # reconnect forever. Accepting then closing with 1008 + reason gives the client
+    # an actionable signal.
+    await ws.accept()
     token = ws.query_params.get("token") or _bearer(ws.headers.get("authorization"))
     try:
         if not token:
@@ -46,10 +52,15 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
         if owner != principal.user_id:
             auth().require(principal, "checkout:read:any")  # only admins read others'
     except DomainError as exc:
+        # Direct send (not _send): a transient error must not be persisted to the
+        # durable conversation log or replayed on the next connect.
+        try:
+            await ws.send_json({"type": "error", "data": {"reason": str(exc)}})
+        except RuntimeError:
+            pass  # socket already gone
         await ws.close(code=_POLICY_VIOLATION, reason=str(exc))
         return
 
-    await ws.accept()
     cid = checkout_id
     inbox: asyncio.Queue = asyncio.Queue()
     turn: asyncio.Task | None = None
