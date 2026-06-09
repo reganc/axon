@@ -178,6 +178,69 @@ async def test_explain_node_streams_and_persists_materials(seeded, seams):
     assert summary is not None and summary.kind == "artifact"
 
 
+async def test_explain_derived_artifact_is_terminal(seeded, seams):
+    """Opening a derived study artifact (Key points / Analogy) explains it in
+    place but accretes no further cards — the recursion that produced
+    'Key points: Analogy: …' must stop at the leaf."""
+    comp = make_companion(seams, plan=[])
+    concept = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "deep dive")
+
+    # Mining the concept produces the "Key points: …" artifact.
+    _ = [e async for e in comp.explain_node(checkout.id, concept.id)]
+    artifact = await seams.content.get_node_by_key(
+        normalize_key(f"Key points: {concept.title}")
+    )
+    assert artifact is not None and artifact.kind == "artifact"
+
+    # Opening that artifact streams an explanation but creates nothing new.
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    events = [e async for e in comp.explain_node(checkout.id, artifact.id)]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    says = [e for e in events if e.type == "say"]
+    assert len(says) >= 1 and all(
+        e.data.get("node_id") == str(artifact.id) for e in says
+    )
+    assert after == before  # no "Key points: Key points: …" / "Analogy: Analogy: …"
+    assert not any(e.type in ("node.update", "edge.create") for e in events)
+    assert events[-1].type == "done" and events[-1].data["nodes"] == 0
+
+
+async def test_pull_thread_does_not_compound_deeper_prefix(seeded, seams):
+    """Pulling a thread off an 'A deeper look at …' node targets the underlying
+    concept rather than stacking another prefix."""
+    comp = make_companion(seams, plan=[])
+    anchor = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "rabbit hole")
+
+    _ = [e async for e in comp.pull_thread(checkout.id, anchor.id)]
+    deeper = await seams.content.get_node_by_key(
+        normalize_key(f"A deeper look at {anchor.title}")
+    )
+    assert deeper is not None
+
+    events = [e async for e in comp.pull_thread(checkout.id, deeper.id)]
+    titles = [
+        e.data["node"]["title"]
+        for e in events
+        if e.type in ("node.create", "node.update") and e.data.get("node")
+    ]
+    assert titles, "expected a node payload from the rabbit-hole branch"
+    assert all("A deeper look at A deeper look at" not in t for t in titles)
+    # it deepens the concept itself — which already exists, so it is reused
+    assert any(t == f"A deeper look at {anchor.title}" for t in titles)
+
+
+def test_core_title_unwinds_derived_prefixes():
+    from app.seams.companion import _core_title
+
+    assert _core_title("Analogy: Current AI Capabilities") == "Current AI Capabilities"
+    assert _core_title("A deeper look at Analogy: X") == "X"
+    assert _core_title("A deeper look at A deeper look at Key points: X") == "X"
+    assert _core_title("The Convolutional Network") == "The Convolutional Network"
+
+
 async def test_discuss_clarification_stays_ephemeral(seeded, seams):
     """A plain follow-up streams a spoken answer pinned to the card and records a
     `discussed` interaction, but accretes no new node (it was just a clarification)."""

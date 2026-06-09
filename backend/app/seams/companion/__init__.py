@@ -107,6 +107,37 @@ def _candidate_payload(c: CandidateNode) -> dict:
     }
 
 
+# Cards the companion derives from other cards carry these title prefixes. Two
+# consequences flow from recognizing them:
+#   * opening one explains it in place but never spawns another round of study
+#     materials — a derived card is a leaf, not a concept to mine again, and
+#   * "go deeper" peels them off so the new branch names the underlying concept
+#     instead of compounding ("A deeper look at A deeper look at …").
+_DEEPER_PREFIX = "A deeper look at "
+_DERIVED_PREFIXES = (_DEEPER_PREFIX, "Key points: ", "Analogy: ")
+
+
+def _core_title(title: str) -> str:
+    """Peel derived-material prefixes off a title so a follow-up names the real
+    concept. Idempotent, and unwinds any accidental nesting from earlier bugs."""
+    out = title.strip()
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _DERIVED_PREFIXES:
+            if out.startswith(prefix):
+                out = out[len(prefix) :].strip()
+                changed = True
+    return out or title.strip()
+
+
+def _is_derived(node: Node) -> bool:
+    """A terminal card: a persisted study artifact (Key points / Analogy) or a
+    rabbit-hole 'deeper look' node. Opening it explains in place; it is never
+    itself mined for further materials."""
+    return node.kind == "artifact" or node.title.startswith(_DEEPER_PREFIX)
+
+
 def _neighbor_graph(anchor_id: UUID, sub) -> dict:
     """A compact, render-ready neighborhood for the card's mini-graph, capped so
     the payload stays small even for a richly connected node."""
@@ -279,10 +310,12 @@ class Companion:
         anchor_node = sub.nodes[0]
         yield _ev("status", phase="rabbit_hole", detail=anchor_node.title)
 
-        title = f"A deeper look at {anchor_node.title}"
-        node, events = await self._materialize(
-            cid, title, anchor_node.title, user_id=owner
-        )
+        # Deepen the underlying concept, not the meta-wrapper: pulling a thread
+        # off "A deeper look at Analogy: X" should go after X, not stack another
+        # "A deeper look at" in front of it.
+        core = _core_title(anchor_node.title)
+        title = f"{_DEEPER_PREFIX}{core}"
+        node, events = await self._materialize(cid, title, core, user_id=owner)
         for e in events:
             yield e
 
@@ -358,8 +391,10 @@ class Companion:
         self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]:
         """Deep-dive on an existing card: stream a conversational explanation of
-        the node itself (ephemeral talk), then generate study materials that
-        persist into the library (a key-points summary, an analogy, follow-ups).
+        the node itself (ephemeral talk), then — for concept cards only —
+        generate study materials that persist into the library (a key-points
+        summary, an analogy, follow-ups). Derived cards (artifacts, rabbit-hole
+        'deeper look' nodes) are terminal: explained in place, never mined again.
 
         `say` events for the explanation carry `node_id` so the frontend can pin
         the narration to the card that was opened.
@@ -379,6 +414,20 @@ class Companion:
         tail = _sanitize(buf).strip()
         if tail:
             yield _ev("say", text=tail, node_id=str(nid))
+
+        # Derived cards are leaves: a study artifact (Key points / Analogy) or a
+        # rabbit-hole "deeper look" node. Explaining one in place is the whole
+        # interaction — mining it again compounds meta-garbage ("Key points:
+        # Analogy: …", "A deeper look at A deeper look at …"), so we accrete
+        # study materials only off real concepts.
+        if _is_derived(node):
+            await self._learning.record(
+                InteractionEvent(
+                    checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
+                )
+            )
+            yield _ev("done", nodes=0)
+            return
 
         # 2) study materials -> persist through the canonicalize chokepoint, each
         # linked back to the source node so they replay and grow the graph.
