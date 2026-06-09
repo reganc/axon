@@ -7,8 +7,10 @@ import { CardDeck } from "@/components/CardDeck";
 import { CardDetail } from "@/components/CardDetail";
 import { CompanionBar } from "@/components/CompanionBar";
 import { GraphCanvas } from "@/components/GraphCanvas";
+import { LevelSelector } from "@/components/LevelSelector";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getConversation, getSpine } from "@/lib/api";
+import type { DeliveryLevel } from "@/lib/types";
 import { useCompanionStream } from "@/lib/useCompanionStream";
 import { speak, stopSpeaking } from "@/lib/voice";
 import { type GNode, useGraphStore } from "@/store/graphStore";
@@ -26,6 +28,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [view, setView] = useState<View>("cards");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [level, setLevelState] = useState<DeliveryLevel>("undergrad");
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -64,8 +67,15 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     exploreQuestion,
     explain,
     discuss,
+    setLevel,
     requestMedia,
   } = useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
+
+  // Apply the chosen level to the live session (and re-apply on change). The hook
+  // also re-sends it on every reconnect, so the choice survives blips.
+  useEffect(() => {
+    setLevel(level);
+  }, [level, setLevel]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -155,6 +165,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
               </button>
             ))}
           </div>
+          <LevelSelector value={level} onChange={setLevelState} />
           <ThemeToggle />
         </div>
       </header>

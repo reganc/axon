@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wsBase } from "./api";
 import { getToken } from "./auth";
-import type { ClientMessage, StreamEvent } from "./types";
+import type { ClientMessage, DeliveryLevel, StreamEvent } from "./types";
 import { useGraphStore } from "@/store/graphStore";
 import { useTranscriptStore } from "@/store/transcriptStore";
 
@@ -23,6 +23,9 @@ export function useCompanionStream(
   const wsRef = useRef<WebSocket | null>(null);
   const closedRef = useRef(false);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Chosen delivery level. Transient (server-side too), so re-send it on every
+  // (re)connect to keep the learner's choice across auto-reconnects.
+  const levelRef = useRef<DeliveryLevel | null>(null);
 
   // 1008 = policy violation (bad/expired token, or the checkout no longer
   // exists). Permanent for this checkout — stop reconnecting and surface it,
@@ -52,7 +55,12 @@ export function useCompanionStream(
       const ws = new WebSocket(`${wsBase()}/ws/companion/${checkoutId}?token=${token}`);
       wsRef.current = ws;
 
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        if (levelRef.current) {
+          ws.send(JSON.stringify({ type: "set_level", level: levelRef.current }));
+        }
+      };
       ws.onmessage = (e) => {
         let parsed: { type: string; data?: Record<string, unknown> };
         try {
@@ -145,6 +153,14 @@ export function useCompanionStream(
     [send],
   );
 
+  const setLevel = useCallback(
+    (level: DeliveryLevel) => {
+      levelRef.current = level;
+      send({ type: "set_level", level });
+    },
+    [send],
+  );
+
   return {
     connected,
     fatal,
@@ -155,6 +171,7 @@ export function useCompanionStream(
     exploreQuestion,
     explain,
     discuss,
+    setLevel,
     requestMedia,
   };
 }

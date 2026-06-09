@@ -9,8 +9,15 @@ checkout belongs to the caller, then runs a bidirectional loop:
                      {type: pull_thread, node_id}      spawn a rabbit-hole
                      {type: explain, node_id}          deep-dive a selected card
                      {type: discuss, node_id, text}    node-scoped follow-up chat
+                     {type: set_level, level}          pitch talk to a learner level
                      {type: request_media, node_id}    visual aids for a card
                      {type: close}                     end
+
+`set_level` is a transient, per-connection presentation hint (kid|high_school|
+undergrad|expert) that shapes only the spoken/streamed talk — deep-dive
+explanations and discussion replies. It never touches the canonical graph: the
+same nodes/bodies are generated and persisted regardless of the level a learner
+reads them at.
   server -> client : StreamEvent JSON (say/ask/node.create/node.update/...)
 
 Every emitted event is also published to Redis for multi-device fan-out.
@@ -68,6 +75,7 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
     turn: asyncio.Task | None = None
     aux: asyncio.Task | None = None  # deep-dive / discuss; cancelled when superseded
     media: asyncio.Task | None = None  # enrichment stream; its own cancellable slot
+    level: str | None = None  # transient delivery level for this connection's talk
 
     async def stream(agen) -> None:
         async for ev in agen:
@@ -91,13 +99,17 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
                 await stream(companion().pull_thread(cid, msg.get("node_id")))
             elif kind == "explore_question":
                 await stream(companion().explore_question(cid, msg.get("node_id")))
+            elif kind == "set_level":
+                # Transient presentation hint; unknown values degrade to no
+                # conditioning downstream. Not persisted to the durable log.
+                level = msg.get("level")
             elif kind == "explain":
                 # Deep-dive on a selected card. Runs as a cancellable task so the
                 # receive loop keeps reading — opening another card supersedes it.
                 if aux and not aux.done():
                     aux.cancel()
                 aux = asyncio.create_task(
-                    stream(companion().explain_node(cid, msg.get("node_id")))
+                    stream(companion().explain_node(cid, msg.get("node_id"), level))
                 )
             elif kind == "discuss":
                 # A node-scoped follow-up. Shares the cancellable aux slot with the
@@ -108,7 +120,7 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
                 aux = asyncio.create_task(
                     stream(
                         companion().discuss(
-                            cid, msg.get("node_id"), msg.get("text", "")
+                            cid, msg.get("node_id"), msg.get("text", ""), level
                         )
                     )
                 )

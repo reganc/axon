@@ -232,6 +232,26 @@ async def test_pull_thread_does_not_compound_deeper_prefix(seeded, seams):
     assert any(t == f"A deeper look at {anchor.title}" for t in titles)
 
 
+async def test_delivery_level_does_not_fork_the_corpus(seeded, seams):
+    """Two learners viewing the same concept at different delivery levels share
+    one canonical artifact — the level shapes ephemeral talk, never what persists."""
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    kid = await _free_checkout(seams, "kid")
+    expert = await _free_checkout(seams, "expert")
+
+    _ = [e async for e in comp.explain_node(kid.id, node.id, level="kid")]
+    key = normalize_key(f"Key points: {node.title}")
+    first = await seams.content.get_node_by_key(key)
+    assert first is not None
+
+    _ = [e async for e in comp.explain_node(expert.id, node.id, level="expert")]
+    second = await seams.content.get_node_by_key(key)
+    assert second is not None
+    assert second.id == first.id  # reused, not forked
+    assert second.body == first.body  # level-neutral canonical body
+
+
 def test_core_title_unwinds_derived_prefixes():
     from app.seams.companion import _core_title
 

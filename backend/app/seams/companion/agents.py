@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 from ...config import Settings, get_settings
 from ...jsonutil import parse_json
 from ...ports import CandidateNode, LLMPort, Msg, Node
+from .levels import level_clause
 
 log = logging.getLogger("axon.agents")
 
@@ -178,7 +179,7 @@ class Elaborator:
         self._llm = llm
         self._s = settings or get_settings()
 
-    def explain(self, node: Node) -> AsyncIterator[str]:
+    def explain(self, node: Node, level: str | None = None) -> AsyncIterator[str]:
         msgs = [
             Msg(
                 role="system",
@@ -187,6 +188,7 @@ class Elaborator:
                     "concept conversationally and in depth — intuition first, then a "
                     "concrete example, then why it matters. Flowing spoken prose, no "
                     "markdown, no headings, no lists, no citations."
+                    + level_clause(level)
                 ),
             ),
             Msg(
@@ -288,7 +290,7 @@ class Conversationalist:
         self._s = settings or get_settings()
 
     def reply(
-        self, node: Node, history: list[dict], question: str
+        self, node: Node, history: list[dict], question: str, level: str | None = None
     ) -> AsyncIterator[str]:
         convo = "\n".join(f"{t['role']}: {t['text']}" for t in history) or "(none yet)"
         msgs = [
@@ -299,6 +301,7 @@ class Conversationalist:
                     "learner about a specific concept. Answer their follow-up directly "
                     "and build on what was already said — don't repeat it. Flowing "
                     "spoken prose, no markdown, no headings, no lists, no citations."
+                    + level_clause(level)
                 ),
             ),
             Msg(
@@ -412,7 +415,10 @@ class MediaScout:
         return {
             "videos": [str(u) for u in (data.get("videos") or []) if u][:3],
             "links": [
-                {"title": str(x.get("title") or x.get("url") or ""), "url": str(x.get("url") or "")}
+                {
+                    "title": str(x.get("title") or x.get("url") or ""),
+                    "url": str(x.get("url") or ""),
+                }
                 for x in (data.get("links") or [])
                 if isinstance(x, dict) and x.get("url")
             ][:5],
@@ -464,5 +470,5 @@ def _strip_code_fence(text: str) -> str:
     if t.startswith("```"):
         t = t.split("\n", 1)[-1] if "\n" in t else ""
         if t.endswith("```"):
-            t = t[: -3]
+            t = t[:-3]
     return t.strip()

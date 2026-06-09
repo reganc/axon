@@ -388,7 +388,7 @@ class Companion:
         yield _ev("done", nodes=produced)
 
     async def explain_node(
-        self, checkout_id: UUID, node_id: UUID
+        self, checkout_id: UUID, node_id: UUID, level: str | None = None
     ) -> AsyncIterator[StreamEvent]:
         """Deep-dive on an existing card: stream a conversational explanation of
         the node itself (ephemeral talk), then — for concept cards only —
@@ -405,8 +405,10 @@ class Companion:
         yield _ev("status", phase="explaining", detail=node.title)
 
         # 1) streamed explanation — flush whole sentences so TTS reads naturally.
+        #    `level` shapes only this ephemeral talk; the study materials below
+        #    persist at the canonical register regardless of the learner's level.
         buf = ""
-        async for chunk in self._elaborator.explain(node):
+        async for chunk in self._elaborator.explain(node, level=level):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
             for s in sentences:
@@ -466,7 +468,7 @@ class Companion:
         yield _ev("done", nodes=produced)
 
     async def discuss(
-        self, checkout_id: UUID, node_id: UUID, message: str
+        self, checkout_id: UUID, node_id: UUID, message: str, level: str | None = None
     ) -> AsyncIterator[StreamEvent]:
         """A node-scoped, multi-turn follow-up — the discussion layer.
 
@@ -489,7 +491,9 @@ class Companion:
         #    the card via node_id (same path the deep-dive narration uses).
         buf = ""
         parts: list[str] = []
-        async for chunk in self._conversationalist.reply(node, history, message):
+        async for chunk in self._conversationalist.reply(
+            node, history, message, level=level
+        ):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
             for s in sentences:

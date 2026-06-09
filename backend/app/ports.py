@@ -276,10 +276,10 @@ class CompanionPort(Protocol):
         self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]: ...
     def explain_node(
-        self, checkout_id: UUID, node_id: UUID
+        self, checkout_id: UUID, node_id: UUID, level: str | None = None
     ) -> AsyncIterator[StreamEvent]: ...
     def discuss(
-        self, checkout_id: UUID, node_id: UUID, message: str
+        self, checkout_id: UUID, node_id: UUID, message: str, level: str | None = None
     ) -> AsyncIterator[StreamEvent]: ...
     def enrich(
         self, checkout_id: UUID, node_id: UUID

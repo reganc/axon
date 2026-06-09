@@ -120,6 +120,10 @@ export type StreamEvent =
   | { type: "status"; data: { phase?: string; detail?: string } }
   | { type: "done"; data: { nodes?: number } };
 
+// How an explanation is pitched to the learner. A transient, per-session
+// presentation hint — it shapes only the spoken/streamed talk, never the graph.
+export type DeliveryLevel = "kid" | "high_school" | "undergrad" | "expert";
+
 // Client -> server messages.
 export type ClientMessage =
   | { type: "subject"; text: string }
@@ -129,5 +133,6 @@ export type ClientMessage =
   | { type: "explore_question"; node_id: string }
   | { type: "explain"; node_id: string }
   | { type: "discuss"; node_id: string; text: string }
+  | { type: "set_level"; level: DeliveryLevel }
   | { type: "request_media"; node_id: string }
   | { type: "close" };
