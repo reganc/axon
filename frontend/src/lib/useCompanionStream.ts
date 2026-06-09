@@ -153,8 +153,10 @@ export function useCompanionStream(
     [send],
   );
 
+  // `null` clears conditioning (unconditioned) — the server then adds no level
+  // clause. levelRef is only re-sent on reconnect when a real tier is set.
   const setLevel = useCallback(
-    (level: DeliveryLevel) => {
+    (level: DeliveryLevel | null) => {
       levelRef.current = level;
       send({ type: "set_level", level });
     },

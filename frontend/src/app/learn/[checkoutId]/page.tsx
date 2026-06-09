@@ -28,7 +28,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [view, setView] = useState<View>("cards");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [level, setLevelState] = useState<DeliveryLevel>("undergrad");
+  const [level, setLevelState] = useState<DeliveryLevel | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

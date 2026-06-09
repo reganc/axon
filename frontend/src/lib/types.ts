@@ -133,6 +133,6 @@ export type ClientMessage =
   | { type: "explore_question"; node_id: string }
   | { type: "explain"; node_id: string }
   | { type: "discuss"; node_id: string; text: string }
-  | { type: "set_level"; level: DeliveryLevel }
+  | { type: "set_level"; level: DeliveryLevel | null }
   | { type: "request_media"; node_id: string }
   | { type: "close" };
