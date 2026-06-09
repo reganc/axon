@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     embed_backend: str = (
         "ollama"  # "ollama" (real, falls back) | "deterministic" (offline)
     )
+    # Degrade fast when Ollama embeddings are wedged (e.g. the embed model can't
+    # load alongside the chat model). A short per-call timeout makes a single
+    # call fall back quickly; the breaker then skips the primary entirely after a
+    # run of failures so a whole seed/session doesn't pay the timeout per node.
+    embed_timeout: float = 5.0  # seconds per embed call before falling back
+    embed_breaker_threshold: int = 3  # consecutive failures before tripping (<=0 off)
+    embed_breaker_cooldown: float = 60.0  # seconds to skip primary while tripped
     # reason tier -> Anthropic API (off-box, opt-in via key)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
