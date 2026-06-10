@@ -207,7 +207,10 @@ class Elaborator:
                 ),
             ),
         ]
-        return self._llm.stream(msgs, "fast")
+        # raw: the node is already grounded — skip the gateway's search/RAG
+        # injection (~13s of dead air before the first word, plus citation
+        # markers the narrator would have to scrub).
+        return self._llm.stream(msgs, "fast", raw=True)
 
     async def materials(
         self, node: Node, *, checkout_id=None, user_id=None
@@ -327,7 +330,9 @@ class Conversationalist:
                 ),
             ),
         ]
-        return self._llm.stream(msgs, "fast")
+        # raw for the same reason as explain: conversational latency beats
+        # search context the discussion doesn't need.
+        return self._llm.stream(msgs, "fast", raw=True)
 
     async def extract_concept(
         self,

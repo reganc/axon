@@ -73,14 +73,25 @@ class GatewayChat:
             return resp.json()["choices"][0]["message"]["content"]
 
     async def stream(
-        self, msgs: list[Msg], *, model: str | None = None
+        self, msgs: list[Msg], *, model: str | None = None, raw: bool = False
     ) -> AsyncIterator[str]:
+        # raw=True is the gateway's per-request opt-out of web-search/RAG
+        # injection: ~13s faster to first token (measured) and no citation
+        # markers in the prose. Used by the talk streams, whose content is
+        # already grounded; never by agents that *need* the search lane.
+        payload: dict = {
+            "model": self.model,
+            "messages": _as_dicts(msgs),
+            "stream": True,
+        }
+        if raw:
+            payload["raw"] = True
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
                 self.url,
                 headers=self.headers,
-                json={"model": self.model, "messages": _as_dicts(msgs), "stream": True},
+                json=payload,
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -121,8 +132,9 @@ class AnthropicChat:
         return "".join(b.text for b in resp.content if b.type == "text")
 
     async def stream(
-        self, msgs: list[Msg], *, model: str | None = None
+        self, msgs: list[Msg], *, model: str | None = None, raw: bool = False
     ) -> AsyncIterator[str]:
+        # `raw` is a gateway concept; the Anthropic lane has no injection.
         system, rest = self._split(msgs)
         async with self._client.messages.stream(
             model=model or self.model,
@@ -145,7 +157,7 @@ class FakeLLM:
         return self._handler(msgs)
 
     async def stream(
-        self, msgs: list[Msg], *, model: str | None = None
+        self, msgs: list[Msg], *, model: str | None = None, raw: bool = False
     ) -> AsyncIterator[str]:
         for word in self._handler(msgs).split(" "):
             yield word + " "
@@ -254,7 +266,9 @@ class LLMGateway:
             )
         return result
 
-    async def stream(self, msgs: list[Msg], tier: Tier) -> AsyncIterator[str]:
+    async def stream(
+        self, msgs: list[Msg], tier: Tier, *, raw: bool = False
+    ) -> AsyncIterator[str]:
         # The streaming path (narration / deep-dive explanations) has no task
         # router, so honor fast_tier here: when "cloud", stream the fast tier from
         # the cheap model instead of the slow local gateway.
@@ -267,7 +281,7 @@ class LLMGateway:
         ):
             backend, model = self._anthropic, self._s.model_cheap
         try:
-            async for chunk in backend.stream(msgs, model=model):
+            async for chunk in backend.stream(msgs, model=model, raw=raw):
                 yield chunk
         except Exception as exc:  # noqa: BLE001
             log.warning(

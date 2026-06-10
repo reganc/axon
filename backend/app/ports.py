@@ -286,7 +286,11 @@ class LearningPort(Protocol):
 @runtime_checkable
 class LLMPort(Protocol):
     # routes fast -> Ollama (local, RTX 3060), reason -> Anthropic API
-    def stream(self, msgs: list[Msg], tier: Tier) -> AsyncIterator[str]: ...
+    # raw=True opts a gateway stream out of web-search/RAG injection (talk
+    # streams whose content is already grounded — much faster to first token).
+    def stream(
+        self, msgs: list[Msg], tier: Tier, *, raw: bool = False
+    ) -> AsyncIterator[str]: ...
     async def complete(self, msgs: list[Msg], tier: Tier) -> str: ...
     async def embed(self, text: str) -> list[float]: ...  # 768-dim
 

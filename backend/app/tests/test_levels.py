@@ -20,9 +20,11 @@ class _CapturingLLM:
 
     def __init__(self) -> None:
         self.last_msgs: list[Msg] | None = None
+        self.last_raw: bool | None = None
 
-    def stream(self, msgs: list[Msg], tier: str) -> AsyncIterator[str]:
+    def stream(self, msgs: list[Msg], tier: str, **kw) -> AsyncIterator[str]:
         self.last_msgs = msgs
+        self.last_raw = kw.get("raw")
 
         async def _gen() -> AsyncIterator[str]:
             yield "ok."
@@ -139,3 +141,14 @@ def test_mastery_band_semantics():
     assert _mastery_band(0.5, confusions=2) == "default"  # recovered past shaky
     assert _mastery_band(0.85) == "strong"
     assert _mastery_band(0.85, confusions=3) == "strong"  # mastery won
+
+
+def test_talk_streams_opt_out_of_search_injection():
+    """The latency contract: explain and reply stream raw (no gateway search/
+    RAG injection) — measured at ~13s of dead air before the first word when
+    injected, ~0.2s raw. Their content is already grounded upstream."""
+    llm = _CapturingLLM()
+    Elaborator(llm).explain(_NODE)
+    assert llm.last_raw is True
+    Conversationalist(llm).reply(_NODE, [], "why?")
+    assert llm.last_raw is True
