@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 from ...config import Settings, get_settings
 from ...ports import CandidateNode, InteractionEvent, Node, StreamEvent
 from ..ingestion import normalize_key
+from . import cache
 from . import media_validation as mv
 from .agents import (
     Conversationalist,
@@ -177,6 +178,7 @@ class Companion:
         content,
         learning,
         settings: Settings | None = None,
+        dive_cache=None,
     ) -> None:
         self._s = settings or get_settings()
         self._llm = llm
@@ -184,6 +186,9 @@ class Companion:
         self._ingestion = ingestion
         self._content = content
         self._learning = learning
+        # Optional deep-dive cache (see cache.py). None -> every dive streams
+        # fresh; deps.py wires the Redis-backed cache in production.
+        self._dive_cache = dive_cache
         self._planner = Planner(llm, self._s)
         self._generator = NodeGenerator(llm)
         self._researcher = Researcher(llm, self._s)
@@ -404,17 +409,32 @@ class Companion:
         node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
         yield _ev("status", phase="explaining", detail=node.title)
 
+        # Cache check: a dive for this exact node content + level may already
+        # exist (this or any other session). A hit narrates instantly and
+        # replays the material cards from the DB — zero LLM calls.
+        key = cache.dive_key(
+            nid, level, f"{node.title}\n{node.hook or ''}\n{node.body or ''}"
+        )
+        hit = await self._dive_cache.get(key) if self._dive_cache else None
+        if hit is not None:
+            async for ev in self._replay_dive(cid, nid, hit):
+                yield ev
+            return
+
         # 1) streamed explanation — flush whole sentences so TTS reads naturally.
         #    `level` shapes only this ephemeral talk; the study materials below
         #    persist at the canonical register regardless of the learner's level.
         buf = ""
+        spoken: list[str] = []
         async for chunk in self._elaborator.explain(node, level=level):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
             for s in sentences:
+                spoken.append(s)
                 yield _ev("say", text=s, node_id=str(nid))
         tail = _sanitize(buf).strip()
         if tail:
+            spoken.append(tail)
             yield _ev("say", text=tail, node_id=str(nid))
 
         # Derived cards are leaves: a study artifact (Key points / Analogy) or a
@@ -428,6 +448,10 @@ class Companion:
                     checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
                 )
             )
+            if self._dive_cache:
+                await self._dive_cache.put(
+                    key, {"sentences": spoken, "materials": [], "edges": []}
+                )
             yield _ev("done", nodes=0)
             return
 
@@ -438,26 +462,28 @@ class Companion:
             node, checkout_id=cid, user_id=owner
         )
         produced = 0
+        material_ids: list[str] = []
+        edge_payloads: list[dict] = []
         for candidate in materials:
             mat, events = await self._persist_candidate(candidate)
             for e in events:
                 yield e
             if mat.id != nid:
+                material_ids.append(str(mat.id))
                 # material -> source: a question is *about* the concept; a summary
                 # or analogy *elaborates* it.
                 edge_type = "about" if candidate.kind == "question" else "elaborates"
                 edge = await self._content.add_edge(
                     mat.id, nid, edge_type, origin="ai_generated"
                 )
-                yield _ev(
-                    "edge.create",
-                    edge={
-                        "id": str(edge.id),
-                        "src_node": str(edge.src_node),
-                        "dst_node": str(edge.dst_node),
-                        "type": edge.type,
-                    },
-                )
+                edge_payload = {
+                    "id": str(edge.id),
+                    "src_node": str(edge.src_node),
+                    "dst_node": str(edge.dst_node),
+                    "type": edge.type,
+                }
+                edge_payloads.append(edge_payload)
+                yield _ev("edge.create", edge=edge_payload)
             produced += 1
 
         await self._learning.record(
@@ -465,7 +491,50 @@ class Companion:
                 checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
             )
         )
+        # Cache only after the full dive completed — a cancelled stream (card
+        # closed, superseded) never caches a truncated explanation.
+        if self._dive_cache:
+            await self._dive_cache.put(
+                key,
+                {
+                    "sentences": spoken,
+                    "materials": material_ids,
+                    "edges": edge_payloads,
+                },
+            )
         yield _ev("done", nodes=produced)
+
+    async def _replay_dive(
+        self, cid: UUID, nid: UUID, hit: dict
+    ) -> AsyncIterator[StreamEvent]:
+        """Serve a cached deep-dive: narration sentence-by-sentence, then the
+        material cards re-surfaced from the DB as reuse events — so a fresh
+        checkout's deck still gets the cards. Materials that have since been
+        purged are silently skipped. Zero LLM calls."""
+        for s in hit.get("sentences") or []:
+            yield _ev("say", text=s, node_id=str(nid))
+        ids = [UUID(m) for m in hit.get("materials") or []]
+        if ids:
+            sub = await self._content.get_subgraph(ids, depth=0)
+            known = {str(n.id) for n in sub.nodes} | {str(nid)}
+            for n in sub.nodes:
+                if n.id == nid:
+                    continue
+                yield _ev(
+                    "node.create",
+                    temp_id=str(n.id),
+                    node=_node_payload(n),
+                    reused=True,
+                )
+            for e in hit.get("edges") or []:
+                if e.get("src_node") in known and e.get("dst_node") in known:
+                    yield _ev("edge.create", edge=e)
+        await self._learning.record(
+            InteractionEvent(
+                checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
+            )
+        )
+        yield _ev("done", nodes=0)
 
     async def discuss(
         self, checkout_id: UUID, node_id: UUID, message: str, level: str | None = None

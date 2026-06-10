@@ -80,6 +80,9 @@ class Settings(BaseSettings):
         0.55  # Researcher: below -> flag, don't publish as fact
     )
     companion_max_steps: int = 8  # cap nodes generated per turn
+    companion_dive_cache_ttl_s: int = (
+        7 * 24 * 3600  # cached deep-dive lifetime; 0 disables the cache
+    )
     companion_generate_concurrency: int = (
         3  # nodes materialized in parallel per turn (generate ∥ ground pipeline)
     )

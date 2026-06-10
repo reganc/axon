@@ -178,6 +178,54 @@ async def test_explain_node_streams_and_persists_materials(seeded, seams):
     assert summary is not None and summary.kind == "artifact"
 
 
+async def test_explain_node_reopen_serves_from_cache(seeded, seams):
+    """A second dive on the same card replays from the cache: identical
+    narration, material cards re-surfaced as reuse events, and nothing
+    regenerated or re-persisted (no LLM, no canonicalize)."""
+    from app.seams.companion.cache import MemoryDiveCache
+
+    dive_cache = MemoryDiveCache()
+    comp = make_companion(seams, plan=[], dive_cache=dive_cache)
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "deep dive")
+
+    first = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert len(dive_cache.store) == 1  # the completed dive was captured
+
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    second = [e async for e in comp.explain_node(checkout.id, node.id)]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    # narration replays identically, still pinned to the card
+    first_says = [e.data["text"] for e in first if e.type == "say"]
+    second_says = [e.data["text"] for e in second if e.type == "say"]
+    assert second_says == first_says
+    assert all(
+        e.data.get("node_id") == str(node.id) for e in second if e.type == "say"
+    )
+
+    # material cards re-surface as reuse events; nothing new persists
+    assert after == before
+    assert any(e.type == "node.create" and e.data.get("reused") for e in second)
+    assert any(e.type == "edge.create" for e in second)
+    assert not any(e.type == "node.update" for e in second)  # no canonicalize ran
+    assert second[-1].type == "done"
+
+
+async def test_dive_cache_is_level_scoped(seeded, seams):
+    """kid and expert hear different explanations — their dives cache apart."""
+    from app.seams.companion.cache import MemoryDiveCache
+
+    dive_cache = MemoryDiveCache()
+    comp = make_companion(seams, plan=[], dive_cache=dive_cache)
+    node = await seams.content.get_node_by_key("backpropagation")
+    checkout = await _free_checkout(seams, "levels")
+
+    _ = [e async for e in comp.explain_node(checkout.id, node.id, level="kid")]
+    _ = [e async for e in comp.explain_node(checkout.id, node.id, level="expert")]
+    assert len(dive_cache.store) == 2
+
+
 async def test_explain_derived_artifact_is_terminal(seeded, seams):
     """Opening a derived study artifact (Key points / Analogy) explains it in
     place but accretes no further cards — the recursion that produced

@@ -13,6 +13,7 @@ from .config import get_settings
 from .cost import CostController, DbBudgetGate, DbUsageMeter, RoutingPolicy
 from .embeddings import Embedder, build_embedder
 from .seams.companion import Companion
+from .seams.companion.cache import RedisDiveCache
 from .seams.companion.llm import LLMGateway
 from .seams.content import Content
 from .seams.identity import JwtAuth
@@ -75,6 +76,7 @@ def companion() -> Companion:
         content=content(),
         learning=learning(),
         settings=get_settings(),
+        dive_cache=RedisDiveCache(get_settings().companion_dive_cache_ttl_s),
     )
 
 

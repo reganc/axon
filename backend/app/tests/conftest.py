@@ -346,8 +346,11 @@ async def exec_sql(query: str, **params) -> None:
         await engine.dispose()
 
 
-def make_companion(seams, plan: list[str], confidence: float = 0.8):
-    """A Companion wired to real seams but a scripted (deterministic) LLM."""
+def make_companion(seams, plan: list[str], confidence: float = 0.8, dive_cache=None):
+    """A Companion wired to real seams but a scripted (deterministic) LLM.
+
+    `dive_cache` defaults to None (no caching) so tests stay hermetic — pass a
+    `MemoryDiveCache` to exercise the cached deep-dive path explicitly."""
     from app.seams.companion import Companion
     from app.seams.companion.llm import LLMGateway
 
@@ -358,6 +361,7 @@ def make_companion(seams, plan: list[str], confidence: float = 0.8):
         ingestion=seams.ingestion,
         content=seams.content,
         learning=seams.learning,
+        dive_cache=dive_cache,
     )
 
 
