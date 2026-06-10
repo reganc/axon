@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { wsBase } from "./api";
 import { getToken } from "./auth";
-import type { ClientMessage, StreamEvent } from "./types";
+import type { ClientMessage, DeliveryLevel, StreamEvent } from "./types";
 import { useGraphStore } from "@/store/graphStore";
 import { useTranscriptStore } from "@/store/transcriptStore";
 
@@ -16,13 +16,19 @@ const GRAPH_EVENTS = new Set(["node.create", "node.update", "edge.create"]);
  */
 export function useCompanionStream(
   checkoutId: string,
-  onSay?: (text: string) => void,
+  /** Live narration callback. `nodeId` is set on card-pinned narration (deep
+   *  dives, discussion replies) so the caller can mute it when that card
+   *  isn't open; general narration arrives with `nodeId` undefined. */
+  onSay?: (text: string, nodeId?: string) => void,
 ) {
   const [connected, setConnected] = useState(false);
   const [fatal, setFatal] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const closedRef = useRef(false);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Chosen delivery level. Transient (server-side too), so re-send it on every
+  // (re)connect to keep the learner's choice across auto-reconnects.
+  const levelRef = useRef<DeliveryLevel | null>(null);
 
   // 1008 = policy violation (bad/expired token, or the checkout no longer
   // exists). Permanent for this checkout — stop reconnecting and surface it,
@@ -52,7 +58,12 @@ export function useCompanionStream(
       const ws = new WebSocket(`${wsBase()}/ws/companion/${checkoutId}?token=${token}`);
       wsRef.current = ws;
 
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        if (levelRef.current) {
+          ws.send(JSON.stringify({ type: "set_level", level: levelRef.current }));
+        }
+      };
       ws.onmessage = (e) => {
         let parsed: { type: string; data?: Record<string, unknown> };
         try {
@@ -73,7 +84,7 @@ export function useCompanionStream(
         else applyTranscript(ev);
         // Speak live narration only (replay/restore goes through the store path,
         // never here — so resuming a session doesn't re-read the whole history).
-        if (ev.type === "say") onSayRef.current?.(ev.data.text);
+        if (ev.type === "say") onSayRef.current?.(ev.data.text, ev.data.node_id);
       };
       ws.onclose = (e) => {
         setConnected(false);
@@ -131,6 +142,29 @@ export function useCompanionStream(
     },
     [send, setBusy],
   );
+  const discuss = useCallback(
+    (nodeId: string, text: string) => {
+      setBusy(true);
+      send({ type: "discuss", node_id: nodeId, text });
+    },
+    [send, setBusy],
+  );
+  // Visual aids load in the background — no busy flag (it shouldn't block the deck
+  // or the deep-dive; media just streams into the card when it's ready).
+  const requestMedia = useCallback(
+    (nodeId: string) => send({ type: "request_media", node_id: nodeId }),
+    [send],
+  );
+
+  // `null` clears conditioning (unconditioned) — the server then adds no level
+  // clause. levelRef is only re-sent on reconnect when a real tier is set.
+  const setLevel = useCallback(
+    (level: DeliveryLevel | null) => {
+      levelRef.current = level;
+      send({ type: "set_level", level });
+    },
+    [send],
+  );
 
   return {
     connected,
@@ -141,5 +175,8 @@ export function useCompanionStream(
     pullThread,
     exploreQuestion,
     explain,
+    discuss,
+    setLevel,
+    requestMedia,
   };
 }

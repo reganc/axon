@@ -24,21 +24,46 @@ from uuid import UUID, uuid4
 from ...config import Settings, get_settings
 from ...ports import CandidateNode, InteractionEvent, Node, StreamEvent
 from ..ingestion import normalize_key
-from .agents import Elaborator, NodeGenerator, Planner, Researcher
+from . import cache
+from . import media_validation as mv
+from .agents import (
+    Conversationalist,
+    Diagrammer,
+    Elaborator,
+    MediaScout,
+    NodeGenerator,
+    Planner,
+    Researcher,
+)
 from .llm import FakeLLM, GatewayChat, LLMGateway  # noqa: F401  (re-exported)
 
 log = logging.getLogger("axon.companion")
 
-# The fast gateway injects web-search/RAG context and leaves citation markers like
-# [W2] / [L1] in prose. Strip them (plus stray markdown emphasis) before narration.
-_CITATION = re.compile(r"\[[A-Za-z]?\d+\]")
-_EMPHASIS = re.compile(r"[*_]{1,2}")
+# The fast gateway injects web-search/RAG context and leaves markup in prose:
+# citation markers ([W2]/[L1]), markdown links, emphasis/inline-code ticks, and
+# list/heading leaders. Piper voices any leftover symbol literally — that, plus
+# doubled spaces and a space before punctuation, is what makes narration sound
+# garbled. Strip it all and normalize whitespace before the text reaches TTS.
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")  # [label](url) -> label
+_CITATION = re.compile(r"\[[A-Za-z]?\d+\]")  # [W2], [L1], [3]
+_LIST_LEAD = re.compile(r"(?m)^[ \t]*(?:[-*+•>]+|#{1,6})[ \t]+")  # bullets/headings
+_EMPHASIS = re.compile(r"[*_`]{1,3}")  # bold / italic / inline-code ticks
+_WS = re.compile(r"\s+")  # collapse runs of whitespace (incl. newlines)
+_SPACE_PUNCT = re.compile(r" +([.,!?;:])")  # drop the space before punctuation
 # A sentence boundary: terminal punctuation followed by whitespace.
 _SENTENCE = re.compile(r"(.+?[.!?])(\s+)", re.DOTALL)
 
 
 def _sanitize(text: str) -> str:
-    return _EMPHASIS.sub("", _CITATION.sub("", text))
+    """Strip gateway/markdown markup and normalize whitespace so the TTS voice
+    never tries to pronounce a stray symbol (the usual cause of garbled audio)."""
+    text = _MD_LINK.sub(r"\1", text)
+    text = _CITATION.sub("", text)
+    text = _LIST_LEAD.sub("", text)
+    text = _EMPHASIS.sub("", text)
+    text = _WS.sub(" ", text)
+    text = _SPACE_PUNCT.sub(r"\1", text)
+    return text.strip()
 
 
 def _flush_sentences(buf: str) -> tuple[str, list[str]]:
@@ -58,6 +83,39 @@ def _ev(type_: str, **data) -> StreamEvent:
     return StreamEvent(type=type_, data=data)
 
 
+# Mastery bands for prompt conditioning. The *band* (not the raw float) keys the
+# dive cache, so personalization stays coarse enough to share cached dives.
+# Only three bands, and "default" covers both new and developing learners: mere
+# engagement (a view, a dive) must not change the band, or a card would miss
+# its own cache on reopen. "shaky" needs *negative evidence* — recorded
+# confusion — not just low mastery; "strong" needs real demonstrated grasp.
+_MASTERY_SHAKY = 0.35
+_MASTERY_STRONG = 0.70
+
+
+def _mastery_band(mastery: float | None, confusions: int = 0) -> str:
+    if mastery is not None and mastery >= _MASTERY_STRONG:
+        return "strong"
+    if mastery is not None and confusions > 0 and mastery < _MASTERY_SHAKY:
+        return "shaky"
+    return "default"
+
+
+def _band_clause(band: str) -> str:
+    """How the focal node's mastery band shapes the talk. 'default' gets the
+    baseline register — no clause."""
+    return {
+        "shaky": (
+            " This learner has struggled with this concept before — rebuild it "
+            "gently from first principles and check the intuition as you go."
+        ),
+        "strong": (
+            " This learner already has a solid grasp of this concept — skip "
+            "the basics and go straight to depth, nuance, and edge cases."
+        ),
+    }.get(band, "")
+
+
 def _node_payload(node: Node) -> dict:
     return {
         "id": str(node.id),
@@ -69,6 +127,7 @@ def _node_payload(node: Node) -> dict:
         "origin": node.origin,
         "confidence": node.confidence,
         "locked": node.locked,
+        "attributes": node.attributes,
     }
 
 
@@ -80,6 +139,64 @@ def _candidate_payload(c: CandidateNode) -> dict:
         "body": c.body,
         "origin": c.origin,
     }
+
+
+# Cards the companion derives from other cards carry these title prefixes. Two
+# consequences flow from recognizing them:
+#   * opening one explains it in place but never spawns another round of study
+#     materials — a derived card is a leaf, not a concept to mine again, and
+#   * "go deeper" peels them off so the new branch names the underlying concept
+#     instead of compounding ("A deeper look at A deeper look at …").
+_DEEPER_PREFIX = "A deeper look at "
+_DERIVED_PREFIXES = (_DEEPER_PREFIX, "Key points: ", "Analogy: ")
+
+
+def _core_title(title: str) -> str:
+    """Peel derived-material prefixes off a title so a follow-up names the real
+    concept. Idempotent, and unwinds any accidental nesting from earlier bugs."""
+    out = title.strip()
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _DERIVED_PREFIXES:
+            if out.startswith(prefix):
+                out = out[len(prefix) :].strip()
+                changed = True
+    return out or title.strip()
+
+
+def _is_derived(node: Node) -> bool:
+    """A terminal card: a persisted study artifact (Key points / Analogy) or a
+    rabbit-hole 'deeper look' node. Opening it explains in place; it is never
+    itself mined for further materials."""
+    return node.kind == "artifact" or node.title.startswith(_DEEPER_PREFIX)
+
+
+def _neighbor_graph(anchor_id: UUID, sub) -> dict:
+    """A compact, render-ready neighborhood for the card's mini-graph, capped so
+    the payload stays small even for a richly connected node."""
+    nodes = [
+        {"id": str(n.id), "title": n.title, "kind": n.kind} for n in sub.nodes[:13]
+    ]
+    keep = {n["id"] for n in nodes}
+    edges = [
+        {"src": str(e.src_node), "dst": str(e.dst_node), "type": e.type}
+        for e in sub.edges
+        if str(e.src_node) in keep and str(e.dst_node) in keep
+    ][:24]
+    return {"anchor": str(anchor_id), "nodes": nodes, "edges": edges}
+
+
+def _edge_event(edge) -> StreamEvent:
+    return _ev(
+        "edge.create",
+        edge={
+            "id": str(edge.id),
+            "src_node": str(edge.src_node),
+            "dst_node": str(edge.dst_node),
+            "type": edge.type,
+        },
+    )
 
 
 class Companion:
@@ -94,6 +211,7 @@ class Companion:
         content,
         learning,
         settings: Settings | None = None,
+        dive_cache=None,
     ) -> None:
         self._s = settings or get_settings()
         self._llm = llm
@@ -101,10 +219,16 @@ class Companion:
         self._ingestion = ingestion
         self._content = content
         self._learning = learning
+        # Optional deep-dive cache (see cache.py). None -> every dive streams
+        # fresh; deps.py wires the Redis-backed cache in production.
+        self._dive_cache = dive_cache
         self._planner = Planner(llm, self._s)
         self._generator = NodeGenerator(llm)
         self._researcher = Researcher(llm, self._s)
         self._elaborator = Elaborator(llm, self._s)
+        self._conversationalist = Conversationalist(llm, self._s)
+        self._media_scout = MediaScout(llm, self._s)
+        self._diagrammer = Diagrammer(llm, self._s)
 
     # -- main loop ------------------------------------------------------------
 
@@ -160,13 +284,11 @@ class Companion:
                         pending.appendleft((redirect, _launch(redirect)))
                         yield _ev("say", text=f"Sure — let's switch to {redirect}.")
                 elif barge and barge.get("type") == "answer":
-                    await self._learning.record(
-                        InteractionEvent(
-                            checkout_id=cid,
-                            node_id=prev_id,
-                            event_type="explained_back",
-                            payload={"text": barge.get("text", "")},
-                        )
+                    await self._track(
+                        cid,
+                        prev_id,
+                        "explained_back",
+                        {"text": barge.get("text", "")},
                     )
 
                 title, task = pending.popleft()
@@ -190,14 +312,7 @@ class Companion:
                         },
                     )
 
-                await self._learning.record(
-                    InteractionEvent(
-                        checkout_id=cid,
-                        node_id=node.id,
-                        event_type="viewed",
-                        payload={},
-                    )
-                )
+                await self._track(cid, node.id, "viewed")
                 prev_id = node.id
                 produced += 1
                 _fill()
@@ -224,10 +339,12 @@ class Companion:
         anchor_node = sub.nodes[0]
         yield _ev("status", phase="rabbit_hole", detail=anchor_node.title)
 
-        title = f"A deeper look at {anchor_node.title}"
-        node, events = await self._materialize(
-            cid, title, anchor_node.title, user_id=owner
-        )
+        # Deepen the underlying concept, not the meta-wrapper: pulling a thread
+        # off "A deeper look at Analogy: X" should go after X, not stack another
+        # "A deeper look at" in front of it.
+        core = _core_title(anchor_node.title)
+        title = f"{_DEEPER_PREFIX}{core}"
+        node, events = await self._materialize(cid, title, core, user_id=owner)
         for e in events:
             yield e
 
@@ -243,14 +360,7 @@ class Companion:
                 "type": edge.type,
             },
         )
-        await self._learning.record(
-            InteractionEvent(
-                checkout_id=cid,
-                node_id=node.id,
-                event_type="rabbit_hole_followed",
-                payload={},
-            )
-        )
+        await self._track(cid, node.id, "rabbit_hole_followed")
         yield _ev("done", nodes=1)
 
     async def explore_question(
@@ -291,20 +401,18 @@ class Companion:
                         "type": edge.type,
                     },
                 )
-            await self._learning.record(
-                InteractionEvent(
-                    checkout_id=cid, node_id=node.id, event_type="viewed", payload={}
-                )
-            )
+            await self._track(cid, node.id, "viewed")
             produced += 1
         yield _ev("done", nodes=produced)
 
     async def explain_node(
-        self, checkout_id: UUID, node_id: UUID
+        self, checkout_id: UUID, node_id: UUID, level: str | None = None
     ) -> AsyncIterator[StreamEvent]:
         """Deep-dive on an existing card: stream a conversational explanation of
-        the node itself (ephemeral talk), then generate study materials that
-        persist into the library (a key-points summary, an analogy, follow-ups).
+        the node itself (ephemeral talk), then — for concept cards only —
+        generate study materials that persist into the library (a key-points
+        summary, an analogy, follow-ups). Derived cards (artifacts, rabbit-hole
+        'deeper look' nodes) are terminal: explained in place, never mined again.
 
         `say` events for the explanation carry `node_id` so the frontend can pin
         the narration to the card that was opened.
@@ -314,16 +422,58 @@ class Companion:
         node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
         yield _ev("status", phase="explaining", detail=node.title)
 
+        # How well does this learner know this card already? The coarse band
+        # shapes the talk (and keys the cache) — shaky learners get first
+        # principles, strong ones get depth.
+        ctx = await self._learning.learner_context(cid, nid)
+        band = _mastery_band(ctx.focus_mastery, ctx.focus_confusions)
+
+        # Cache check: a dive for this exact node content + level + mastery band
+        # may already exist (this or any other session). A hit narrates
+        # instantly and replays the material cards from the DB — zero LLM calls.
+        key = cache.dive_key(
+            nid,
+            level,
+            f"{node.title}\n{node.hook or ''}\n{node.body or ''}",
+            band=band,
+        )
+        hit = await self._dive_cache.get(key) if self._dive_cache else None
+        if hit is not None:
+            async for ev in self._replay_dive(cid, nid, hit):
+                yield ev
+            return
+
         # 1) streamed explanation — flush whole sentences so TTS reads naturally.
+        #    `level` shapes only this ephemeral talk; the study materials below
+        #    persist at the canonical register regardless of the learner's level.
         buf = ""
-        async for chunk in self._elaborator.explain(node):
+        spoken: list[str] = []
+        async for chunk in self._elaborator.explain(
+            node, level=level, learner_clause=_band_clause(band)
+        ):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
             for s in sentences:
+                spoken.append(s)
                 yield _ev("say", text=s, node_id=str(nid))
         tail = _sanitize(buf).strip()
         if tail:
+            spoken.append(tail)
             yield _ev("say", text=tail, node_id=str(nid))
+
+        # Derived cards are leaves: a study artifact (Key points / Analogy) or a
+        # rabbit-hole "deeper look" node. Explaining one in place is the whole
+        # interaction — mining it again compounds meta-garbage ("Key points:
+        # Analogy: …", "A deeper look at A deeper look at …"), so we accrete
+        # study materials only off real concepts.
+        if _is_derived(node):
+            await self._track(cid, nid, "deep_dive")
+            if self._dive_cache:
+                await self._dive_cache.put(
+                    key, {"sentences": spoken, "materials": [], "edges": []}
+                )
+            yield _ev("done", nodes=0)
+            return
 
         # 2) study materials -> persist through the canonicalize chokepoint, each
         # linked back to the source node so they replay and grow the graph.
@@ -332,34 +482,221 @@ class Companion:
             node, checkout_id=cid, user_id=owner
         )
         produced = 0
+        material_ids: list[str] = []
+        edge_payloads: list[dict] = []
         for candidate in materials:
             mat, events = await self._persist_candidate(candidate)
             for e in events:
                 yield e
             if mat.id != nid:
+                material_ids.append(str(mat.id))
                 # material -> source: a question is *about* the concept; a summary
                 # or analogy *elaborates* it.
                 edge_type = "about" if candidate.kind == "question" else "elaborates"
                 edge = await self._content.add_edge(
                     mat.id, nid, edge_type, origin="ai_generated"
                 )
-                yield _ev(
-                    "edge.create",
-                    edge={
-                        "id": str(edge.id),
-                        "src_node": str(edge.src_node),
-                        "dst_node": str(edge.dst_node),
-                        "type": edge.type,
-                    },
-                )
+                edge_payload = {
+                    "id": str(edge.id),
+                    "src_node": str(edge.src_node),
+                    "dst_node": str(edge.dst_node),
+                    "type": edge.type,
+                }
+                edge_payloads.append(edge_payload)
+                yield _ev("edge.create", edge=edge_payload)
             produced += 1
+
+        await self._track(cid, nid, "deep_dive")
+        # Cache only after the full dive completed — a cancelled stream (card
+        # closed, superseded) never caches a truncated explanation.
+        if self._dive_cache:
+            await self._dive_cache.put(
+                key,
+                {
+                    "sentences": spoken,
+                    "materials": material_ids,
+                    "edges": edge_payloads,
+                },
+            )
+        yield _ev("done", nodes=produced)
+
+    async def _replay_dive(
+        self, cid: UUID, nid: UUID, hit: dict
+    ) -> AsyncIterator[StreamEvent]:
+        """Serve a cached deep-dive: narration sentence-by-sentence, then the
+        material cards re-surfaced from the DB as reuse events — so a fresh
+        checkout's deck still gets the cards. Materials that have since been
+        purged are silently skipped. Zero LLM calls."""
+        for s in hit.get("sentences") or []:
+            yield _ev("say", text=s, node_id=str(nid))
+        ids = [UUID(m) for m in hit.get("materials") or []]
+        if ids:
+            sub = await self._content.get_subgraph(ids, depth=0)
+            known = {str(n.id) for n in sub.nodes} | {str(nid)}
+            for n in sub.nodes:
+                if n.id == nid:
+                    continue
+                yield _ev(
+                    "node.create",
+                    temp_id=str(n.id),
+                    node=_node_payload(n),
+                    reused=True,
+                )
+            for e in hit.get("edges") or []:
+                if e.get("src_node") in known and e.get("dst_node") in known:
+                    yield _ev("edge.create", edge=e)
+        await self._track(cid, nid, "deep_dive")
+        yield _ev("done", nodes=0)
+
+    async def discuss(
+        self, checkout_id: UUID, node_id: UUID, message: str, level: str | None = None
+    ) -> AsyncIterator[StreamEvent]:
+        """A node-scoped, multi-turn follow-up — the discussion layer.
+
+        Streams a conversational answer pinned to the card (spoken if voice is on),
+        carrying the prior turns of this card's chat as continuity. If the exchange
+        surfaces a *genuinely new* concept, it accretes as a linked card through the
+        canonicalize chokepoint (reusing an existing node when the library already
+        holds it); pure clarifications stay ephemeral talk. The learner's own turn
+        is echoed as a `discuss` event so the durable log replays both sides.
+        """
+        cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
+        owner = await self._library.checkout_owner(cid)
+        node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
+
+        # History before the echo, so the current message isn't double-counted.
+        history = await self._discussion_history(cid, nid)
+        yield _ev("discuss", node_id=str(nid), role="learner", text=message)
+
+        # Personal context for the reply: discussion is uncached and one-to-one,
+        # so it gets the full read — focal mastery band plus the learner's
+        # weak/strong neighboring concepts.
+        learner = await self._learner_clause(
+            await self._learning.learner_context(cid, nid)
+        )
+
+        # 1) streamed answer — whole sentences so TTS reads naturally; pinned to
+        #    the card via node_id (same path the deep-dive narration uses).
+        buf = ""
+        parts: list[str] = []
+        async for chunk in self._conversationalist.reply(
+            node, history, message, level=level, learner_clause=learner
+        ):
+            buf += chunk
+            buf, sentences = _flush_sentences(buf)
+            for s in sentences:
+                parts.append(s)
+                yield _ev("say", text=s, node_id=str(nid))
+        tail = _sanitize(buf).strip()
+        if tail:
+            parts.append(tail)
+            yield _ev("say", text=tail, node_id=str(nid))
+        answer = " ".join(parts)
+
+        await self._track(cid, nid, "discussed", {"message": message})
+
+        # 2) auto-accrete: did the exchange surface a genuinely new concept? If so,
+        #    build it (reuse-or-generate+ground) and link it back to this card.
+        candidate = await self._conversationalist.extract_concept(
+            node, message, answer, checkout_id=cid, user_id=owner
+        )
+        if candidate is not None:
+            new_node, events = await self._materialize(
+                cid, candidate.title, node.title, user_id=owner
+            )
+            for e in events:
+                yield e
+            if new_node.id != nid:
+                edge = await self._content.add_edge(
+                    new_node.id, nid, "elaborates", origin="ai_generated"
+                )
+                yield _edge_event(edge)
+            await self._learning.record(
+                InteractionEvent(
+                    checkout_id=cid,
+                    node_id=new_node.id,
+                    event_type="rabbit_hole_followed",
+                    payload={"via": "discuss"},
+                )
+            )
+        yield _ev("done")
+
+    async def enrich(
+        self, checkout_id: UUID, node_id: UUID
+    ) -> AsyncIterator[StreamEvent]:
+        """Surface visual aids for a card — the visual layer. Emits `media` events
+        (each recorded in the durable log, so they replay on reconnect):
+
+        1. a neighbor mini-graph drawn straight from the canonical graph (no LLM);
+        2. a generated Mermaid diagram of the concept's structure;
+        3. real web media (an explainer video, reference links, an image) found via
+           the gateway's web search.
+
+        Every external reference is resolved (`media_validation`) before it reaches
+        the learner — a dead or fabricated URL is dropped, not rendered.
+        """
+        cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
+        owner = await self._library.checkout_owner(cid)
+        sub = await self._content.get_subgraph([nid], depth=1)
+        node = next((n for n in sub.nodes if n.id == nid), None)
+        if node is None:
+            return
+        # No `status`/`done` here on purpose: enrichment is a background side-channel
+        # that streams `media` events into the open card. Emitting `done` would clear
+        # the shared `busy` flag and cut a concurrent deep-dive's "thinking" cue short.
+
+        # 1) neighbor mini-graph (canonical, no model call)
+        graph = _neighbor_graph(nid, sub)
+        if graph["edges"]:
+            yield _ev("media", node_id=str(nid), media_kind="graph", graph=graph)
+
+        # 2) generated structural diagram, gated on valid Mermaid syntax
+        mermaid = await self._diagrammer.diagram(node, checkout_id=cid, user_id=owner)
+        if mv.validate_mermaid(mermaid):
+            yield _ev("media", node_id=str(nid), media_kind="diagram", mermaid=mermaid)
+
+        # 3) real web media — each candidate resolved before it's surfaced
+        found = await self._media_scout.find(node, checkout_id=cid, user_id=owner)
+        for url in found["videos"]:
+            if await mv.validate_youtube(url):
+                yield _ev("media", node_id=str(nid), media_kind="video", url=url)
+        for link in found["links"]:
+            if await mv.validate_link(link["url"]):
+                yield _ev(
+                    "media",
+                    node_id=str(nid),
+                    media_kind="link",
+                    url=link["url"],
+                    title=link["title"],
+                )
+        for url in found["images"]:
+            if await mv.validate_image(url):
+                yield _ev("media", node_id=str(nid), media_kind="image", url=url)
 
         await self._learning.record(
             InteractionEvent(
-                checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
+                checkout_id=cid, node_id=nid, event_type="enriched", payload={}
             )
         )
-        yield _ev("done", nodes=produced)
+
+    async def _discussion_history(self, cid: UUID, nid: UUID) -> list[dict]:
+        """Reconstruct this card's prior turns from the durable conversation log:
+        the learner's `discuss` turns and the Tutor's `say` lines pinned to the
+        node (deep-dive narration + earlier answers), in order. Consecutive Tutor
+        sentences collapse into one turn so the model sees coherent exchanges."""
+        events = await self._library.get_conversation(cid)
+        target = str(nid)
+        turns: list[dict] = []
+        for ev in events:
+            if ev.type == "discuss" and ev.data.get("node_id") == target:
+                turns.append({"role": "learner", "text": ev.data.get("text", "")})
+            elif ev.type == "say" and ev.data.get("node_id") == target:
+                text = ev.data.get("text", "")
+                if turns and turns[-1]["role"] == "tutor":
+                    turns[-1]["text"] += " " + text
+                else:
+                    turns.append({"role": "tutor", "text": text})
+        return turns
 
     # -- per-step: reuse or generate -----------------------------------------
 
@@ -404,6 +741,52 @@ class Companion:
         node, persist_events = await self._persist_candidate(candidate)
         events.extend(persist_events)
         return node, events
+
+    async def _track(
+        self, cid: UUID, nid: UUID | None, event_type: str, payload: dict | None = None
+    ) -> None:
+        """Record a learner interaction AND recompute the node's mastery — the
+        two must travel together, or events accrete while the mastery model
+        never moves (the bug this helper retires)."""
+        await self._learning.record(
+            InteractionEvent(
+                checkout_id=cid,
+                node_id=nid,
+                event_type=event_type,
+                payload=payload or {},
+            )
+        )
+        if nid is not None:
+            await self._learning.update_mastery(cid, nid)
+
+    async def _learner_clause(self, ctx) -> str:
+        """The full personal clause for *uncached* talk (discussion replies):
+        focal-node band plus the learner's weak/strong neighboring concepts,
+        titles resolved through the content port."""
+        parts: list[str] = []
+        band_text = _band_clause(_mastery_band(ctx.focus_mastery, ctx.focus_confusions))
+        if band_text:
+            parts.append(band_text.strip())
+        ids = [nm.node_id for nm in [*ctx.weakest, *ctx.strongest]]
+        titles: dict = {}
+        if ids:
+            sub = await self._content.get_subgraph(ids, depth=0)
+            titles = {n.id: n.title for n in sub.nodes}
+        weak = [titles[nm.node_id] for nm in ctx.weakest if nm.node_id in titles]
+        strong = [titles[nm.node_id] for nm in ctx.strongest if nm.node_id in titles]
+        if weak:
+            parts.append(
+                "They have been struggling with "
+                + ", ".join(weak)
+                + " — watch for gaps from there."
+            )
+        if strong:
+            parts.append(
+                "They are confident with "
+                + ", ".join(strong)
+                + " — build on those when it helps."
+            )
+        return (" " + " ".join(parts)) if parts else ""
 
     async def _persist_candidate(
         self, candidate: CandidateNode

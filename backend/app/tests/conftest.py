@@ -275,6 +275,44 @@ def scripted_handler(plan: list[str], confidence: float = 0.8):
                 f"Let's dig into {concept}. The core intuition is simple. "
                 f"Here is a concrete example. And this is why it matters."
             )
+        if "TASK: discuss" in user:
+            return (
+                "Good follow-up. Here is the heart of it. "
+                "And that connects to the bigger picture."
+            )
+        if "TASK: extract_concept" in user:
+            # A follow-up prefixed "NEW:" surfaces a fresh concept (auto-accrete);
+            # anything else is treated as a clarification (stays ephemeral talk).
+            q = _between(user, "Learner asked:", "\n")
+            if q.startswith("NEW:"):
+                title = q[len("NEW:") :].strip()
+                return json.dumps(
+                    {
+                        "new_concept": True,
+                        "title": title,
+                        "hook": f"Why does {title} matter?",
+                        "body": f"A short take on {title}.",
+                    }
+                )
+            return json.dumps({"new_concept": False})
+        if "TASK: find_media" in user:
+            # A mix of resolvable ("good") and dead ("bad") candidates so tests can
+            # assert the validation gate drops the bad ones.
+            return json.dumps(
+                {
+                    "videos": [
+                        "https://www.youtube.com/watch?v=GOODvid",
+                        "https://www.youtube.com/watch?v=BADvid",
+                    ],
+                    "links": [
+                        {"title": "Good ref", "url": "https://good.example/ref"},
+                        {"title": "Dead ref", "url": "https://bad.example/404"},
+                    ],
+                    "images": ["https://good.example/pic.png"],
+                }
+            )
+        if "TASK: diagram" in user:
+            return "graph TD; A[Input] --> B[Conv]; B --> C[Pool]"
         if "TASK: materials" in user:
             concept = _between(user, "Concept:", "\n") or "concept"
             return json.dumps(
@@ -308,8 +346,11 @@ async def exec_sql(query: str, **params) -> None:
         await engine.dispose()
 
 
-def make_companion(seams, plan: list[str], confidence: float = 0.8):
-    """A Companion wired to real seams but a scripted (deterministic) LLM."""
+def make_companion(seams, plan: list[str], confidence: float = 0.8, dive_cache=None):
+    """A Companion wired to real seams but a scripted (deterministic) LLM.
+
+    `dive_cache` defaults to None (no caching) so tests stay hermetic — pass a
+    `MemoryDiveCache` to exercise the cached deep-dive path explicitly."""
     from app.seams.companion import Companion
     from app.seams.companion.llm import LLMGateway
 
@@ -320,6 +361,7 @@ def make_companion(seams, plan: list[str], confidence: float = 0.8):
         ingestion=seams.ingestion,
         content=seams.content,
         learning=seams.learning,
+        dive_cache=dive_cache,
     )
 
 

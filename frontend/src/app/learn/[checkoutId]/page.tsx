@@ -1,14 +1,16 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { CardDeck } from "@/components/CardDeck";
 import { CardDetail } from "@/components/CardDetail";
 import { CompanionBar } from "@/components/CompanionBar";
 import { GraphCanvas } from "@/components/GraphCanvas";
+import { LevelSelector } from "@/components/LevelSelector";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getConversation, getSpine } from "@/lib/api";
+import type { DeliveryLevel } from "@/lib/types";
 import { useCompanionStream } from "@/lib/useCompanionStream";
 import { speak, stopSpeaking } from "@/lib/voice";
 import { type GNode, useGraphStore } from "@/store/graphStore";
@@ -26,6 +28,11 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [view, setView] = useState<View>("cards");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [level, setLevelState] = useState<DeliveryLevel | null>(null);
+  // Mirror openId into a ref so the stable onSay callback always sees the
+  // current card without re-subscribing the socket.
+  const openIdRef = useRef<string | null>(null);
+  openIdRef.current = openId;
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -39,9 +46,20 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
   }, [view, selectedId]);
 
   const closeDetail = () => {
+    // Closing the card cuts the narration immediately — the deep-dive text
+    // still completes silently in the store, but the voice stops with the card.
+    stopSpeaking();
     setOpenId(null);
     select(null);
   };
+
+  // Speak live narration, but mute lines pinned to a card that isn't open
+  // (e.g. a deep-dive still streaming after the learner closed the card).
+  // General narration (no nodeId) always speaks.
+  const onSay = useCallback((text: string, nodeId?: string) => {
+    if (nodeId && nodeId !== openIdRef.current) return;
+    speak(text);
+  }, []);
 
   const toggleSpeak = () => {
     setSpeakEnabled((prev) => {
@@ -63,7 +81,16 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     pullThread,
     exploreQuestion,
     explain,
-  } = useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
+    discuss,
+    setLevel,
+    requestMedia,
+  } = useCompanionStream(checkoutId, speakEnabled ? onSay : undefined);
+
+  // Apply the chosen level to the live session (and re-apply on change). The hook
+  // also re-sends it on every reconnect, so the choice survives blips.
+  useEffect(() => {
+    setLevel(level);
+  }, [level, setLevel]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -102,6 +129,17 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
         .finally(seedSpine);
     }
   }, [checkoutId, initGraph, initTranscript]);
+
+  // Asking a follow-up on a card is a barge-in too: the deep-dive narration
+  // stops so the answer doesn't queue behind it (the backend already cancels
+  // the superseded stream; this drops the clips that were already in flight).
+  const onDiscuss = useCallback(
+    (nodeId: string, text: string) => {
+      stopSpeaking();
+      discuss(nodeId, text);
+    },
+    [discuss],
+  );
 
   const onExplore = (node: GNode) => {
     if (node.kind === "question") exploreQuestion(node.id);
@@ -153,6 +191,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
               </button>
             ))}
           </div>
+          <LevelSelector value={level} onChange={setLevelState} />
           <ThemeToggle />
         </div>
       </header>
@@ -180,6 +219,8 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
           onClose={closeDetail}
           onExplore={onExplore}
           onDeepDive={explain}
+          onDiscuss={onDiscuss}
+          onRequestMedia={requestMedia}
         />
       )}
     </div>

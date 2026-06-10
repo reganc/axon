@@ -90,7 +90,8 @@ async def voice_health() -> dict:
     s = get_settings()
     return {
         "enabled": s.voice_enabled,
-        "tts_voice": s.tts_voice,
+        "tts_engine": s.tts_engine,
+        "tts_voice": s.kokoro_voice if s.tts_engine == "kokoro" else s.tts_voice,
         "tts_ready": tts_engine().ready,
         "stt_model": s.stt_model,
         "stt_device": s.stt_device,

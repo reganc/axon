@@ -13,13 +13,14 @@ from .config import get_settings
 from .cost import CostController, DbBudgetGate, DbUsageMeter, RoutingPolicy
 from .embeddings import Embedder, build_embedder
 from .seams.companion import Companion
+from .seams.companion.cache import RedisDiveCache
 from .seams.companion.llm import LLMGateway
 from .seams.content import Content
 from .seams.identity import JwtAuth
 from .seams.ingestion import Ingestion
 from .seams.learning import Learning
 from .seams.library import Library
-from .voice import SttEngine, TtsEngine
+from .voice import KokoroEngine, SttEngine, TtsEngine
 
 
 @lru_cache
@@ -75,12 +76,16 @@ def companion() -> Companion:
         content=content(),
         learning=learning(),
         settings=get_settings(),
+        dive_cache=RedisDiveCache(get_settings().companion_dive_cache_ttl_s),
     )
 
 
 @lru_cache
-def tts_engine() -> TtsEngine:
-    return TtsEngine(get_settings())
+def tts_engine() -> "KokoroEngine | TtsEngine":
+    s = get_settings()
+    if s.tts_engine == "kokoro":
+        return KokoroEngine(s)
+    return TtsEngine(s)
 
 
 @lru_cache

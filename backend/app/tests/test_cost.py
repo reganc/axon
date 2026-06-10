@@ -87,7 +87,9 @@ async def test_complete_honors_routed_model_for_cloud_task():
     )
     gw._fast = None
 
-    out = await gw.complete([Msg(role="user", content="x" * 40)], "reason", task="ground")
+    out = await gw.complete(
+        [Msg(role="user", content="x" * 40)], "reason", task="ground"
+    )
     assert out == "grounded"
     assert spy.models == ["claude-haiku-4-5"]  # routed Haiku, not the Sonnet default
 

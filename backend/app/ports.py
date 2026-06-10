@@ -165,6 +165,27 @@ class NodeState(BaseModel):
     learner_notes: str | None = None
 
 
+class NodeMastery(BaseModel):
+    node_id: UUID
+    mastery: float
+
+
+class LearnerContext(BaseModel):
+    """A compact read of what this learner knows, for prompt conditioning.
+
+    `focus_mastery` is the focal node's mastery (None until first tracked) and
+    `focus_confusions` its recorded confusion count — explicit struggle, not
+    just low engagement. `weakest`/`strongest` are the checkout's low/high-
+    mastery nodes (the focal node excluded), so the companion can mind the
+    gaps and build on strengths.
+    """
+
+    focus_mastery: float | None = None
+    focus_confusions: int = 0
+    weakest: list[NodeMastery] = Field(default_factory=list)
+    strongest: list[NodeMastery] = Field(default_factory=list)
+
+
 class CandidateNode(BaseModel):
     title: str
     kind: NodeKind = "concept"  # study materials persist as artifact/question nodes
@@ -205,8 +226,19 @@ class Msg(BaseModel):
 
 class StreamEvent(BaseModel):
     # The one stream the Tutor produces; the frontend demuxes into voice + canvas.
+    # `discuss` carries one turn of a node-scoped conversation (role + text); the
+    # learner's own turn is echoed as `discuss` so the durable log replays both
+    # sides of the chat.
     type: Literal[
-        "say", "ask", "node.create", "node.update", "edge.create", "status", "done"
+        "say",
+        "ask",
+        "discuss",
+        "media",
+        "node.create",
+        "node.update",
+        "edge.create",
+        "status",
+        "done",
     ]
     data: dict = Field(default_factory=dict)
 
@@ -246,12 +278,19 @@ class LearningPort(Protocol):
     async def record(self, event: InteractionEvent) -> None: ...
     async def update_mastery(self, checkout_id: UUID, node_id: UUID) -> float: ...
     async def due_reviews(self, checkout_id: UUID) -> list[UUID]: ...
+    async def learner_context(
+        self, checkout_id: UUID, node_id: UUID | None = None
+    ) -> LearnerContext: ...
 
 
 @runtime_checkable
 class LLMPort(Protocol):
     # routes fast -> Ollama (local, RTX 3060), reason -> Anthropic API
-    def stream(self, msgs: list[Msg], tier: Tier) -> AsyncIterator[str]: ...
+    # raw=True opts a gateway stream out of web-search/RAG injection (talk
+    # streams whose content is already grounded — much faster to first token).
+    def stream(
+        self, msgs: list[Msg], tier: Tier, *, raw: bool = False
+    ) -> AsyncIterator[str]: ...
     async def complete(self, msgs: list[Msg], tier: Tier) -> str: ...
     async def embed(self, text: str) -> list[float]: ...  # 768-dim
 
@@ -265,6 +304,12 @@ class CompanionPort(Protocol):
         self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]: ...
     def explain_node(
+        self, checkout_id: UUID, node_id: UUID, level: str | None = None
+    ) -> AsyncIterator[StreamEvent]: ...
+    def discuss(
+        self, checkout_id: UUID, node_id: UUID, message: str, level: str | None = None
+    ) -> AsyncIterator[StreamEvent]: ...
+    def enrich(
         self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]: ...
 

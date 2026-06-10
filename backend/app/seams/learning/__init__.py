@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ...ports import InteractionEvent
+from ...ports import InteractionEvent, LearnerContext, NodeMastery
 from ...tables import interaction_events, node_states
 
 # Per-event contribution to mastery. recall_attempt is split by payload.correct.
@@ -24,12 +24,20 @@ _EVENT_WEIGHTS = {
     "explained_back": 0.40,
     "recall_attempt_correct": 0.30,
     "hook_engaged": 0.10,
+    "deep_dive": 0.05,  # opening the full explanation is engagement evidence
+    "discussed": 0.05,  # asking a follow-up on the card likewise
     "asked_question": 0.05,
     "rabbit_hole_followed": 0.05,
     "viewed": 0.03,
     "confused": -0.25,
     "recall_attempt_incorrect": -0.15,
 }
+
+# learner_context bands: below the weak line a node counts as a struggle;
+# at/above the strong line it counts as solid ground to build on.
+_WEAK_BELOW = 0.40
+_STRONG_AT = 0.70
+_CONTEXT_LIMIT = 3
 
 # Mastery band -> next-review interval (SM-2-flavoured, coarse).
 _REVIEW_INTERVALS = [
@@ -144,6 +152,53 @@ class Learning:
                 )
             ).all()
         return [r._mapping[node_states.c.node_id] for r in rows]
+
+    async def learner_context(
+        self, checkout_id: UUID, node_id: UUID | None = None
+    ) -> LearnerContext:
+        """What this learner knows, compactly, for prompt conditioning: the
+        focal node's mastery plus the checkout's weakest/strongest nodes (focal
+        node excluded; ids only — the caller resolves titles via content)."""
+        cid = UUID(str(checkout_id))
+        focal = UUID(str(node_id)) if node_id is not None else None
+        async with self._sm() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        node_states.c.node_id,
+                        node_states.c.mastery,
+                        node_states.c.confusion_count,
+                    ).where(node_states.c.checkout_id == cid)
+                )
+            ).all()
+        focus: float | None = None
+        focus_confusions = 0
+        pairs: list[tuple[UUID, float]] = []
+        for r in rows:
+            m = r._mapping
+            nid, mastery = m[node_states.c.node_id], m[node_states.c.mastery]
+            if focal is not None and nid == focal:
+                focus = mastery
+                focus_confusions = m[node_states.c.confusion_count] or 0
+                continue
+            pairs.append((nid, mastery))
+        pairs.sort(key=lambda p: p[1])
+        weakest = [
+            NodeMastery(node_id=n, mastery=v)
+            for n, v in pairs[:_CONTEXT_LIMIT]
+            if v < _WEAK_BELOW
+        ]
+        strongest = [
+            NodeMastery(node_id=n, mastery=v)
+            for n, v in reversed(pairs[-_CONTEXT_LIMIT:])
+            if v >= _STRONG_AT
+        ]
+        return LearnerContext(
+            focus_mastery=focus,
+            focus_confusions=focus_confusions,
+            weakest=weakest,
+            strongest=strongest,
+        )
 
 
 # Back-compat alias for deps.py during the stub→real swap.

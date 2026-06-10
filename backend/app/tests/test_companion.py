@@ -178,12 +178,281 @@ async def test_explain_node_streams_and_persists_materials(seeded, seams):
     assert summary is not None and summary.kind == "artifact"
 
 
+async def test_explain_node_reopen_serves_from_cache(seeded, seams):
+    """A second dive on the same card replays from the cache: identical
+    narration, material cards re-surfaced as reuse events, and nothing
+    regenerated or re-persisted (no LLM, no canonicalize)."""
+    from app.seams.companion.cache import MemoryDiveCache
+
+    dive_cache = MemoryDiveCache()
+    comp = make_companion(seams, plan=[], dive_cache=dive_cache)
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "deep dive")
+
+    first = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert len(dive_cache.store) == 1  # the completed dive was captured
+
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    second = [e async for e in comp.explain_node(checkout.id, node.id)]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    # narration replays identically, still pinned to the card
+    first_says = [e.data["text"] for e in first if e.type == "say"]
+    second_says = [e.data["text"] for e in second if e.type == "say"]
+    assert second_says == first_says
+    assert all(e.data.get("node_id") == str(node.id) for e in second if e.type == "say")
+
+    # material cards re-surface as reuse events; nothing new persists
+    assert after == before
+    assert any(e.type == "node.create" and e.data.get("reused") for e in second)
+    assert any(e.type == "edge.create" for e in second)
+    assert not any(e.type == "node.update" for e in second)  # no canonicalize ran
+    assert second[-1].type == "done"
+
+
+async def test_dive_cache_is_level_scoped(seeded, seams):
+    """kid and expert hear different explanations — their dives cache apart."""
+    from app.seams.companion.cache import MemoryDiveCache
+
+    dive_cache = MemoryDiveCache()
+    comp = make_companion(seams, plan=[], dive_cache=dive_cache)
+    node = await seams.content.get_node_by_key("backpropagation")
+    checkout = await _free_checkout(seams, "levels")
+
+    _ = [e async for e in comp.explain_node(checkout.id, node.id, level="kid")]
+    _ = [e async for e in comp.explain_node(checkout.id, node.id, level="expert")]
+    assert len(dive_cache.store) == 2
+
+
+async def test_dive_cache_keys_on_mastery_band(seeded, seams):
+    """A learner with recorded confusion gets a 'shaky' dive — cached apart
+    from the default one — while plain engagement stays in 'default' so a
+    reopen still hits."""
+    from app.ports import InteractionEvent
+    from app.seams.companion.cache import MemoryDiveCache
+
+    dive_cache = MemoryDiveCache()
+    comp = make_companion(seams, plan=[], dive_cache=dive_cache)
+    node = await seams.content.get_node_by_key("gradient-based-learning")
+    if node is None:  # seed key differs across fixtures — fall back
+        node = await seams.content.get_node_by_key("backpropagation")
+    checkout = await _free_checkout(seams, "bands")
+
+    _ = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert all(":default:" in k for k in dive_cache.store)
+
+    # reopen: the dive's own engagement must not have changed the band
+    before = len(dive_cache.store)
+    _ = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert len(dive_cache.store) == before  # hit, not a new entry
+
+    # explicit struggle -> shaky -> a differently-keyed, gentler dive
+    for _i in range(2):
+        await seams.learning.record(
+            InteractionEvent(
+                checkout_id=checkout.id,
+                node_id=node.id,
+                event_type="confused",
+                payload={},
+            )
+        )
+    await seams.learning.update_mastery(checkout.id, node.id)
+    _ = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert any(":shaky:" in k for k in dive_cache.store)
+
+
+async def test_explain_derived_artifact_is_terminal(seeded, seams):
+    """Opening a derived study artifact (Key points / Analogy) explains it in
+    place but accretes no further cards — the recursion that produced
+    'Key points: Analogy: …' must stop at the leaf."""
+    comp = make_companion(seams, plan=[])
+    concept = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "deep dive")
+
+    # Mining the concept produces the "Key points: …" artifact.
+    _ = [e async for e in comp.explain_node(checkout.id, concept.id)]
+    artifact = await seams.content.get_node_by_key(
+        normalize_key(f"Key points: {concept.title}")
+    )
+    assert artifact is not None and artifact.kind == "artifact"
+
+    # Opening that artifact streams an explanation but creates nothing new.
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    events = [e async for e in comp.explain_node(checkout.id, artifact.id)]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    says = [e for e in events if e.type == "say"]
+    assert len(says) >= 1 and all(
+        e.data.get("node_id") == str(artifact.id) for e in says
+    )
+    assert after == before  # no "Key points: Key points: …" / "Analogy: Analogy: …"
+    assert not any(e.type in ("node.update", "edge.create") for e in events)
+    assert events[-1].type == "done" and events[-1].data["nodes"] == 0
+
+
+async def test_pull_thread_does_not_compound_deeper_prefix(seeded, seams):
+    """Pulling a thread off an 'A deeper look at …' node targets the underlying
+    concept rather than stacking another prefix."""
+    comp = make_companion(seams, plan=[])
+    anchor = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "rabbit hole")
+
+    _ = [e async for e in comp.pull_thread(checkout.id, anchor.id)]
+    deeper = await seams.content.get_node_by_key(
+        normalize_key(f"A deeper look at {anchor.title}")
+    )
+    assert deeper is not None
+
+    events = [e async for e in comp.pull_thread(checkout.id, deeper.id)]
+    titles = [
+        e.data["node"]["title"]
+        for e in events
+        if e.type in ("node.create", "node.update") and e.data.get("node")
+    ]
+    assert titles, "expected a node payload from the rabbit-hole branch"
+    assert all("A deeper look at A deeper look at" not in t for t in titles)
+    # it deepens the concept itself — which already exists, so it is reused
+    assert any(t == f"A deeper look at {anchor.title}" for t in titles)
+
+
+async def test_delivery_level_does_not_fork_the_corpus(seeded, seams):
+    """Two learners viewing the same concept at different delivery levels share
+    one canonical artifact — the level shapes ephemeral talk, never what persists."""
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    kid = await _free_checkout(seams, "kid")
+    expert = await _free_checkout(seams, "expert")
+
+    _ = [e async for e in comp.explain_node(kid.id, node.id, level="kid")]
+    key = normalize_key(f"Key points: {node.title}")
+    first = await seams.content.get_node_by_key(key)
+    assert first is not None
+
+    _ = [e async for e in comp.explain_node(expert.id, node.id, level="expert")]
+    second = await seams.content.get_node_by_key(key)
+    assert second is not None
+    assert second.id == first.id  # reused, not forked
+    assert second.body == first.body  # level-neutral canonical body
+
+
+def test_core_title_unwinds_derived_prefixes():
+    from app.seams.companion import _core_title
+
+    assert _core_title("Analogy: Current AI Capabilities") == "Current AI Capabilities"
+    assert _core_title("A deeper look at Analogy: X") == "X"
+    assert _core_title("A deeper look at A deeper look at Key points: X") == "X"
+    assert _core_title("The Convolutional Network") == "The Convolutional Network"
+
+
+async def test_discuss_clarification_stays_ephemeral(seeded, seams):
+    """A plain follow-up streams a spoken answer pinned to the card and records a
+    `discussed` interaction, but accretes no new node (it was just a clarification)."""
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "discussion")
+
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    events = [
+        e async for e in comp.discuss(checkout.id, node.id, "Can you say that simpler?")
+    ]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    # learner turn is echoed for replay; the answer streams as say events on the card
+    assert any(e.type == "discuss" and e.data.get("role") == "learner" for e in events)
+    says = [e for e in events if e.type == "say"]
+    assert len(says) >= 2
+    assert all(e.data.get("node_id") == str(node.id) for e in says)
+    # a clarification creates nothing
+    assert after == before
+    assert not any(e.type in ("node.create", "node.update") for e in events)
+    assert events[-1].type == "done"
+
+
+async def test_discuss_new_concept_accretes_a_linked_card(seeded, seams):
+    """A follow-up that surfaces a genuinely new concept canonicalizes into a new
+    card linked back to the source by an `elaborates` edge (one thing leads to
+    another), through the same chokepoint as every other generated node."""
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "discussion")
+
+    new_title = "Synthetic discuss concept zeta"
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    events = [e async for e in comp.discuss(checkout.id, node.id, f"NEW: {new_title}")]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    assert after > before
+    assert any(e.type == "node.create" for e in events)
+    assert any(e.type == "node.update" for e in events)  # gap -> canonicalize
+    assert any(
+        e.type == "edge.create" and e.data["edge"]["type"] == "elaborates"
+        for e in events
+    )
+    # the new concept landed in the library, linked off the discussed card
+    fresh = await seams.content.get_node_by_key(normalize_key(new_title))
+    assert fresh is not None
+    assert events[-1].type == "done"
+
+
+async def test_enrich_emits_only_validated_media(seeded, seams, monkeypatch):
+    """The visual layer: a neighbor mini-graph (from the canonical graph), a
+    generated diagram (real Mermaid gate), and real web media — with every
+    external reference resolved first, so dead/fabricated URLs are dropped."""
+    from app.seams.companion import media_validation as mv
+
+    async def yt(url, **_):
+        return "GOOD" in url
+
+    async def good_host(url, **_):
+        return "good." in url
+
+    monkeypatch.setattr(mv, "validate_youtube", yt)
+    monkeypatch.setattr(mv, "validate_link", good_host)
+    monkeypatch.setattr(mv, "validate_image", good_host)
+
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "visuals")
+
+    events = [e async for e in comp.enrich(checkout.id, node.id)]
+    media = [e for e in events if e.type == "media"]
+    kinds = {e.data["media_kind"] for e in media}
+
+    # neighbor mini-graph straight from the graph, with edges
+    assert "graph" in kinds
+    graph = next(e for e in media if e.data["media_kind"] == "graph")
+    assert graph.data["graph"]["edges"]
+    # generated diagram cleared the mermaid syntax gate
+    assert "diagram" in kinds
+    # only resolvable web media survived (the BAD/dead ones were dropped)
+    assert [e.data["url"] for e in media if e.data["media_kind"] == "video"] == [
+        "https://www.youtube.com/watch?v=GOODvid"
+    ]
+    assert [e.data["url"] for e in media if e.data["media_kind"] == "link"] == [
+        "https://good.example/ref"
+    ]
+    assert [e.data["url"] for e in media if e.data["media_kind"] == "image"] == [
+        "https://good.example/pic.png"
+    ]
+    # enrichment is a background side-channel: it streams media, never a turn
+    # terminator (`done`) that would clear the shared busy flag.
+    assert not any(e.type == "done" for e in events)
+
+
 async def test_explain_node_strips_citation_markers(seeded, seams):
     from app.seams.companion import _flush_sentences, _sanitize
 
+    # Citation markers go, and the whitespace they leave behind is normalized so
+    # Piper doesn't pause oddly or read a stray symbol (garbled-audio cause).
     assert _sanitize("Backprop is the chain rule [W2] in disguise [L1].") == (
-        "Backprop is the chain rule  in disguise ."
+        "Backprop is the chain rule in disguise."
     )
+    # Markdown links keep only their label; emphasis/code ticks and list/heading
+    # leaders are stripped entirely.
+    assert _sanitize("See [the paper](http://x.y) for **more** `detail`.") == (
+        "See the paper for more detail."
+    )
+    assert _sanitize("# Heading\n- a bullet point") == "Heading a bullet point"
     remaining, sentences = _flush_sentences("One sentence. A second one. tail")
     assert sentences == ["One sentence.", "A second one."]
     assert remaining.strip() == "tail"

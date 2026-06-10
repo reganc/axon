@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     embed_backend: str = (
         "ollama"  # "ollama" (real, falls back) | "deterministic" (offline)
     )
+    # Degrade fast when Ollama embeddings are wedged (e.g. the embed model can't
+    # load alongside the chat model). A short per-call timeout makes a single
+    # call fall back quickly; the breaker then skips the primary entirely after a
+    # run of failures so a whole seed/session doesn't pay the timeout per node.
+    embed_timeout: float = 5.0  # seconds per embed call before falling back
+    embed_breaker_threshold: int = 3  # consecutive failures before tripping (<=0 off)
+    embed_breaker_cooldown: float = 60.0  # seconds to skip primary while tripped
     # reason tier -> Anthropic API (off-box, opt-in via key)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
@@ -73,6 +80,9 @@ class Settings(BaseSettings):
         0.55  # Researcher: below -> flag, don't publish as fact
     )
     companion_max_steps: int = 8  # cap nodes generated per turn
+    companion_dive_cache_ttl_s: int = (
+        7 * 24 * 3600  # cached deep-dive lifetime; 0 disables the cache
+    )
     companion_generate_concurrency: int = (
         3  # nodes materialized in parallel per turn (generate ∥ ground pipeline)
     )
@@ -118,9 +128,24 @@ class Settings(BaseSettings):
     # model on the host GPU; flip stt_device="cuda" if you have headroom.
     voice_enabled: bool = True
     voice_model_dir: str = "/models/voice"
-    tts_voice: str = "en_US-ryan-medium"  # Piper voice: natural American male
+    tts_engine: str = "kokoro"  # "kokoro" (natural prosody) | "piper" (fallback)
+    # Kokoro (the default Jarvis voice): kokoro-onnx on CPU, British male.
+    kokoro_voice: str = "bm_george"  # bm_lewis is the alternative
+    kokoro_speed: float = 1.0  # >1 faster, <1 slower
+    kokoro_lang: str = "en-gb"
+    kokoro_model_url: str = (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/"
+        "model-files-v1.0/kokoro-v1.0.onnx"
+    )
+    kokoro_voices_url: str = (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/"
+        "model-files-v1.0/voices-v1.0.bin"
+    )
+    # Piper (fallback engine, AXON_TTS_ENGINE=piper):
+    tts_voice: str = "en_GB-alan-medium"  # calm British male ~ "Jarvis"
     tts_piper_bin: str = "/opt/piper/piper"  # standalone binary (set in Dockerfile)
-    tts_length_scale: float = 0.85  # >1 slower/calmer, <1 faster (brisker cadence)
+    tts_length_scale: float = 1.05  # >1 slower/calmer, <1 faster; <0.9 slurs words
+    tts_sentence_silence: float = 0.25  # seconds of pause appended per sentence
     stt_model: str = "base.en"  # faster-whisper size: tiny.en|base.en|small.en
     stt_device: str = "cpu"  # "cpu" | "cuda"
     stt_compute_type: str = "int8"  # "int8" (cpu) | "float16" (cuda)

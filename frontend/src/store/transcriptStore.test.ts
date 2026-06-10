@@ -7,6 +7,12 @@ const say = (text: string, nodeId?: string): StreamEvent => ({
   data: nodeId ? { text, node_id: nodeId } : { text },
 });
 
+const discuss = (
+  nodeId: string,
+  role: "learner" | "tutor",
+  text: string,
+): StreamEvent => ({ type: "discuss", data: { node_id: nodeId, role, text } });
+
 describe("transcriptStore deep-dive routing", () => {
   beforeEach(() => {
     useTranscriptStore.getState().init("test-checkout");
@@ -42,5 +48,101 @@ describe("transcriptStore deep-dive routing", () => {
     const { deepDives } = useTranscriptStore.getState();
     expect(deepDives.a).toBe("About A.");
     expect(deepDives.b).toBe("About B.");
+  });
+});
+
+describe("transcriptStore discussion threading", () => {
+  beforeEach(() => {
+    useTranscriptStore.getState().init("test-checkout");
+    useTranscriptStore.getState().reset();
+    useTranscriptStore.setState({ checkoutId: "test-checkout" });
+  });
+
+  it("opens a thread on a learner turn and streams the tutor reply into one bubble", () => {
+    const { apply } = useTranscriptStore.getState();
+    // opening deep-dive narration lands in the intro, not the thread
+    apply(say("The intro explanation.", "n1"));
+    // learner asks a follow-up; tutor answer streams as two say events
+    apply(discuss("n1", "learner", "But why does that hold?"));
+    apply(say("Because of this.", "n1"));
+    apply(say("And also that.", "n1"));
+
+    const { deepDives, discussions } = useTranscriptStore.getState();
+    expect(deepDives.n1).toBe("The intro explanation.");
+    expect(discussions.n1).toEqual([
+      { role: "learner", text: "But why does that hold?" },
+      { role: "tutor", text: "Because of this. And also that." },
+    ]);
+  });
+
+  it("keeps multiple exchanges as separate bubbles", () => {
+    const { apply } = useTranscriptStore.getState();
+    apply(say("Intro.", "n1"));
+    apply(discuss("n1", "learner", "Q1"));
+    apply(say("A1.", "n1"));
+    apply(discuss("n1", "learner", "Q2"));
+    apply(say("A2.", "n1"));
+
+    const { discussions } = useTranscriptStore.getState();
+    expect(discussions.n1.map((t) => t.role)).toEqual([
+      "learner",
+      "tutor",
+      "learner",
+      "tutor",
+    ]);
+    expect(discussions.n1[3]).toEqual({ role: "tutor", text: "A2." });
+  });
+
+  it("scopes discussions to their node id", () => {
+    const { apply } = useTranscriptStore.getState();
+    apply(discuss("a", "learner", "about a"));
+    apply(say("answer a", "a"));
+    apply(discuss("b", "learner", "about b"));
+
+    const { discussions } = useTranscriptStore.getState();
+    expect(discussions.a).toHaveLength(2);
+    expect(discussions.b).toEqual([{ role: "learner", text: "about b" }]);
+  });
+});
+
+describe("transcriptStore media routing", () => {
+  beforeEach(() => {
+    useTranscriptStore.getState().init("test-checkout");
+    useTranscriptStore.getState().reset();
+    useTranscriptStore.setState({ checkoutId: "test-checkout" });
+  });
+
+  const media = (
+    nodeId: string,
+    d: Record<string, unknown>,
+  ): StreamEvent => ({ type: "media", data: { node_id: nodeId, ...d } } as StreamEvent);
+
+  it("collects typed media items per node id", () => {
+    const { apply } = useTranscriptStore.getState();
+    apply(media("n1", { media_kind: "video", url: "https://youtu.be/x" }));
+    apply(media("n1", { media_kind: "link", url: "https://w.org", title: "Wiki" }));
+    apply(media("n1", { media_kind: "diagram", mermaid: "graph TD; A-->B" }));
+
+    const items = useTranscriptStore.getState().media.n1;
+    expect(items).toEqual([
+      { kind: "video", url: "https://youtu.be/x" },
+      { kind: "link", url: "https://w.org", title: "Wiki" },
+      { kind: "diagram", mermaid: "graph TD; A-->B" },
+    ]);
+  });
+
+  it("drops malformed media payloads", () => {
+    const { apply } = useTranscriptStore.getState();
+    apply(media("n1", { media_kind: "video" })); // no url
+    apply(media("n1", { media_kind: "diagram" })); // no mermaid
+    expect(useTranscriptStore.getState().media.n1).toBeUndefined();
+  });
+
+  it("de-duplicates replayed media (durable-log re-emit)", () => {
+    const { apply } = useTranscriptStore.getState();
+    const ev = media("n1", { media_kind: "video", url: "https://youtu.be/x" });
+    apply(ev);
+    apply(ev); // replay on reconnect must not duplicate
+    expect(useTranscriptStore.getState().media.n1).toHaveLength(1);
   });
 });

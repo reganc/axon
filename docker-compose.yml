@@ -21,6 +21,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
     networks: [axon_net]
 
   cache:
@@ -32,6 +33,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
     networks: [axon_net]
 
   api:
@@ -47,6 +49,13 @@ services:
     volumes:
       - voice_models:/models/voice   # Piper + Whisper model cache (AXON_VOICE_MODEL_DIR)
       - ./artifacts:/app/artifacts:ro  # seed graph + schema for /ingest/seed and tests
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8100/health\", timeout=3)'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
     networks: [axon_net]
 
   # Background curator: dedups near-duplicate AI nodes on an interval. Same image
@@ -58,6 +67,15 @@ services:
     depends_on:
       db: { condition: service_healthy }
       cache: { condition: service_healthy }
+    restart: unless-stopped
+    networks: [axon_net]
+
+  # Next.js frontend (Phase 4). The browser talks straight to the api on :4100,
+  # so this container only serves the app — no backend dependency at runtime.
+  frontend:
+    build: ./frontend
+    ports:
+      - "${AXON_FRONTEND_PORT:-4101}:3000"
     restart: unless-stopped
     networks: [axon_net]
 
