@@ -128,6 +128,20 @@ class Settings(BaseSettings):
     # model on the host GPU; flip stt_device="cuda" if you have headroom.
     voice_enabled: bool = True
     voice_model_dir: str = "/models/voice"
+    tts_engine: str = "kokoro"  # "kokoro" (natural prosody) | "piper" (fallback)
+    # Kokoro (the default Jarvis voice): kokoro-onnx on CPU, British male.
+    kokoro_voice: str = "bm_george"  # bm_lewis is the alternative
+    kokoro_speed: float = 1.0  # >1 faster, <1 slower
+    kokoro_lang: str = "en-gb"
+    kokoro_model_url: str = (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/"
+        "model-files-v1.0/kokoro-v1.0.onnx"
+    )
+    kokoro_voices_url: str = (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/"
+        "model-files-v1.0/voices-v1.0.bin"
+    )
+    # Piper (fallback engine, AXON_TTS_ENGINE=piper):
     tts_voice: str = "en_GB-alan-medium"  # calm British male ~ "Jarvis"
     tts_piper_bin: str = "/opt/piper/piper"  # standalone binary (set in Dockerfile)
     tts_length_scale: float = 1.05  # >1 slower/calmer, <1 faster; <0.9 slurs words

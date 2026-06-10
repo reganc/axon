@@ -147,3 +147,46 @@ def test_disabled_returns_503(client, fake_engines, monkeypatch):
         headers={"Authorization": f"Bearer {tok}"},
     )
     assert r.status_code == 503
+
+
+def test_tts_engine_selection_follows_config(monkeypatch):
+    """AXON_TTS_ENGINE picks the adapter; piper stays one env var away."""
+    from app import deps
+    from app.voice import KokoroEngine, TtsEngine
+
+    s = deps.get_settings()
+    deps.tts_engine.cache_clear()
+    monkeypatch.setattr(s, "tts_engine", "kokoro")
+    assert isinstance(deps.tts_engine(), KokoroEngine)
+    deps.tts_engine.cache_clear()
+    monkeypatch.setattr(s, "tts_engine", "piper")
+    assert isinstance(deps.tts_engine(), TtsEngine)
+    deps.tts_engine.cache_clear()  # don't leak the piper engine to other tests
+
+
+def test_kokoro_synthesize_renders_wav(monkeypatch):
+    """The adapter passes the configured voice/speed/lang to the model and
+    encodes its float samples as a mono 16-bit WAV — no model download."""
+    from app.voice.kokoro import KokoroEngine
+
+    captured = {}
+
+    class _FakeKokoro:
+        def create(self, text, voice, speed, lang):
+            captured.update(text=text, voice=voice, speed=speed, lang=lang)
+            return [0.0, 0.5, -0.5, 1.0, -1.0], 24000
+
+    engine = KokoroEngine()
+    monkeypatch.setattr(engine, "_ensure", lambda: _FakeKokoro())
+    wav = engine.synthesize("Good evening. Shall we begin?")
+
+    s = voice_router.get_settings()
+    assert captured["voice"] == s.kokoro_voice
+    assert captured["speed"] == s.kokoro_speed
+    assert captured["lang"] == s.kokoro_lang
+    assert wav[:4] == b"RIFF"
+    with wave.open(io.BytesIO(wav)) as w:
+        assert w.getnchannels() == 1
+        assert w.getsampwidth() == 2
+        assert w.getframerate() == 24000
+        assert w.getnframes() == 5

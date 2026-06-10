@@ -20,7 +20,7 @@ from .seams.identity import JwtAuth
 from .seams.ingestion import Ingestion
 from .seams.learning import Learning
 from .seams.library import Library
-from .voice import SttEngine, TtsEngine
+from .voice import KokoroEngine, SttEngine, TtsEngine
 
 
 @lru_cache
@@ -81,8 +81,11 @@ def companion() -> Companion:
 
 
 @lru_cache
-def tts_engine() -> TtsEngine:
-    return TtsEngine(get_settings())
+def tts_engine() -> "KokoroEngine | TtsEngine":
+    s = get_settings()
+    if s.tts_engine == "kokoro":
+        return KokoroEngine(s)
+    return TtsEngine(s)
 
 
 @lru_cache
