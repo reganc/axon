@@ -49,7 +49,9 @@ def is_youtube(url: str) -> bool:
     return bool(host and _YOUTUBE_HOST.search(host))
 
 
-async def validate_youtube(url: str, *, client: httpx.AsyncClient | None = None) -> bool:
+async def validate_youtube(
+    url: str, *, client: httpx.AsyncClient | None = None
+) -> bool:
     """True only if the video resolves via YouTube's oEmbed endpoint (no API key).
     A fabricated video id returns 404 there, so this catches hallucinated links."""
     if not is_youtube(url):
