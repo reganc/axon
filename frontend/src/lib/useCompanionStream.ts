@@ -16,7 +16,10 @@ const GRAPH_EVENTS = new Set(["node.create", "node.update", "edge.create"]);
  */
 export function useCompanionStream(
   checkoutId: string,
-  onSay?: (text: string) => void,
+  /** Live narration callback. `nodeId` is set on card-pinned narration (deep
+   *  dives, discussion replies) so the caller can mute it when that card
+   *  isn't open; general narration arrives with `nodeId` undefined. */
+  onSay?: (text: string, nodeId?: string) => void,
 ) {
   const [connected, setConnected] = useState(false);
   const [fatal, setFatal] = useState<string | null>(null);
@@ -81,7 +84,7 @@ export function useCompanionStream(
         else applyTranscript(ev);
         // Speak live narration only (replay/restore goes through the store path,
         // never here — so resuming a session doesn't re-read the whole history).
-        if (ev.type === "say") onSayRef.current?.(ev.data.text);
+        if (ev.type === "say") onSayRef.current?.(ev.data.text, ev.data.node_id);
       };
       ws.onclose = (e) => {
         setConnected(false);

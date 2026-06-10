@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { CardDeck } from "@/components/CardDeck";
 import { CardDetail } from "@/components/CardDetail";
@@ -29,6 +29,10 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
   const [view, setView] = useState<View>("cards");
   const [openId, setOpenId] = useState<string | null>(null);
   const [level, setLevelState] = useState<DeliveryLevel | null>(null);
+  // Mirror openId into a ref so the stable onSay callback always sees the
+  // current card without re-subscribing the socket.
+  const openIdRef = useRef<string | null>(null);
+  openIdRef.current = openId;
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -42,9 +46,20 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
   }, [view, selectedId]);
 
   const closeDetail = () => {
+    // Closing the card cuts the narration immediately — the deep-dive text
+    // still completes silently in the store, but the voice stops with the card.
+    stopSpeaking();
     setOpenId(null);
     select(null);
   };
+
+  // Speak live narration, but mute lines pinned to a card that isn't open
+  // (e.g. a deep-dive still streaming after the learner closed the card).
+  // General narration (no nodeId) always speaks.
+  const onSay = useCallback((text: string, nodeId?: string) => {
+    if (nodeId && nodeId !== openIdRef.current) return;
+    speak(text);
+  }, []);
 
   const toggleSpeak = () => {
     setSpeakEnabled((prev) => {
@@ -69,7 +84,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     discuss,
     setLevel,
     requestMedia,
-  } = useCompanionStream(checkoutId, speakEnabled ? speak : undefined);
+  } = useCompanionStream(checkoutId, speakEnabled ? onSay : undefined);
 
   // Apply the chosen level to the live session (and re-apply on change). The hook
   // also re-sends it on every reconnect, so the choice survives blips.

@@ -60,21 +60,25 @@ async function fetchTts(text: string, signal: AbortSignal): Promise<Blob> {
   return res.blob();
 }
 
-/** Queue `text` to be spoken after anything already speaking. Best-effort. */
+/** Queue `text` to be spoken after anything already speaking. Best-effort.
+ *  The TTS fetch starts immediately so synthesis overlaps the previous clip's
+ *  playback — only *playback* is serialized. Without the prefetch, every
+ *  sentence boundary stalls for a full network+synthesis round trip. */
 export function speak(text: string): void {
   const value = text.trim();
   if (!value) return;
   const gen = generation;
   queued += 1;
   setSpeaking(true);
+  const controller = new AbortController();
+  inflight.add(controller);
+  const fetched = fetchTts(value, controller.signal).catch(() => null);
   chain = chain.then(async () => {
-    if (gen !== generation) return; // barged in before our turn came up
-    const controller = new AbortController();
-    inflight.add(controller);
     let url: string | null = null;
     try {
-      const blob = await fetchTts(value, controller.signal);
-      if (gen !== generation) return; // barged in while fetching
+      if (gen !== generation) return; // barged in before our turn came up
+      const blob = await fetched;
+      if (!blob || gen !== generation) return; // fetch failed or barged in
       url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       current = audio;
@@ -88,14 +92,18 @@ export function speak(text: string): void {
         audio.onerror = () => resolve();
       });
     } catch {
-      /* swallow — voice is non-essential (covers aborted fetches too) */
+      /* swallow — voice is non-essential; the chain must never reject */
     } finally {
       inflight.delete(controller);
       if (url) URL.revokeObjectURL(url);
-      // Only relinquish `current` if a newer generation hasn't taken over.
-      if (gen === generation) current = null;
-      queued = Math.max(0, queued - 1);
-      if (queued === 0) setSpeaking(false);
+      // Bookkeeping belongs to the generation that queued it: stopSpeaking()
+      // already zeroed the stale generation's counters, so a late finally from
+      // a stopped clip must not decrement (and silence) the new generation.
+      if (gen === generation) {
+        current = null;
+        queued = Math.max(0, queued - 1);
+        if (queued === 0) setSpeaking(false);
+      }
     }
   });
 }

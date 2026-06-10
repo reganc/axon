@@ -125,9 +125,10 @@ class Settings(BaseSettings):
     # model on the host GPU; flip stt_device="cuda" if you have headroom.
     voice_enabled: bool = True
     voice_model_dir: str = "/models/voice"
-    tts_voice: str = "en_US-ryan-medium"  # Piper voice: natural American male
+    tts_voice: str = "en_GB-alan-medium"  # calm British male ~ "Jarvis"
     tts_piper_bin: str = "/opt/piper/piper"  # standalone binary (set in Dockerfile)
-    tts_length_scale: float = 0.95  # >1 slower/calmer, <1 faster; <0.9 slurs words
+    tts_length_scale: float = 1.05  # >1 slower/calmer, <1 faster; <0.9 slurs words
+    tts_sentence_silence: float = 0.25  # seconds of pause appended per sentence
     stt_model: str = "base.en"  # faster-whisper size: tiny.en|base.en|small.en
     stt_device: str = "cpu"  # "cpu" | "cuda"
     stt_compute_type: str = "int8"  # "int8" (cpu) | "float16" (cuda)

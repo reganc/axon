@@ -74,6 +74,30 @@ describe("voice barge-in", () => {
     expect(signal?.aborted).toBe(true);
   });
 
+  it("prefetches queued clips while the current one plays", async () => {
+    const requested: string[] = [];
+    globalThis.fetch = vi.fn((_url: string, opts: RequestInit) => {
+      requested.push((JSON.parse(opts.body as string) as { text: string }).text);
+      return Promise.resolve({
+        ok: true,
+        blob: () => Promise.resolve(new Blob(["x"])),
+      } as Response);
+    }) as unknown as typeof fetch;
+
+    speak("first sentence");
+    speak("second sentence");
+    // Both TTS fetches go out immediately — synthesis overlaps playback instead
+    // of stalling at every sentence boundary.
+    expect(requested).toEqual(["first sentence", "second sentence"]);
+
+    await tick();
+    expect(FakeAudio.instances).toHaveLength(1); // second waits for the first
+    FakeAudio.instances[0].onended?.();
+    await tick();
+    await tick();
+    expect(FakeAudio.instances).toHaveLength(2); // then starts instantly
+  });
+
   it("never plays a clip whose fetch resolves after the stop", async () => {
     let resolveFetch!: (blob: Blob) => void;
     globalThis.fetch = vi.fn(

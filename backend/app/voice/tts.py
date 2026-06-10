@@ -92,6 +92,8 @@ class TtsEngine:
                     out_path,
                     "--length_scale",
                     str(self._s.tts_length_scale),
+                    "--sentence_silence",
+                    str(self._s.tts_sentence_silence),
                 ],
                 input=text.encode("utf-8"),
                 capture_output=True,

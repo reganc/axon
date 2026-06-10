@@ -6,11 +6,13 @@ from __future__ import annotations
 
 import io
 import wave
+from pathlib import Path
 
 import pytest
 
 from app.api.routers import voice as voice_router
 from app.tests.conftest import token
+from app.voice.tts import TtsEngine
 
 USER = "33333333-3333-3333-3333-333333333333"
 
@@ -107,6 +109,32 @@ def test_stt_transcribes_upload(client, fake_engines):
     )
     assert r.status_code == 200, r.text
     assert r.json() == {"text": "hello jarvis"}
+
+
+def test_tts_engine_passes_pace_flags(monkeypatch, tmp_path):
+    """Piper must be invoked with the pace knobs (length_scale slows delivery,
+    sentence_silence adds a natural beat between sentences) — these are the fix
+    for narration that reads too fast and runs words together."""
+    engine = TtsEngine()
+    model = tmp_path / "v.onnx"
+    conf = tmp_path / "v.onnx.json"
+    monkeypatch.setattr(engine, "_ensure_model", lambda: (model, conf))
+
+    captured: dict = {}
+
+    def fake_run(argv, **kwargs):
+        captured["argv"] = argv
+        out = argv[argv.index("--output_file") + 1]
+        Path(out).write_bytes(b"RIFFfake")
+
+    monkeypatch.setattr("app.voice.tts.subprocess.run", fake_run)
+    assert engine.synthesize("Good evening.") == b"RIFFfake"
+
+    argv = captured["argv"]
+    s = voice_router.get_settings()
+    assert argv[argv.index("--length_scale") + 1] == str(s.tts_length_scale)
+    assert argv[argv.index("--sentence_silence") + 1] == str(s.tts_sentence_silence)
+    assert s.tts_length_scale >= 1.0  # never default back into too-fast territory
 
 
 def test_disabled_returns_503(client, fake_engines, monkeypatch):
