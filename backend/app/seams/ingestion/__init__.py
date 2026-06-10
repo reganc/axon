@@ -218,24 +218,30 @@ class Ingestion:
 
     async def _ground(self, candidate: CandidateNode) -> CandidateNode:
         """Grounding gate (Researcher-equivalent, ingestion-local so this seam stays
-        independent of companion). A conversation is a lead, not authority."""
-        msgs = [
-            Msg(
-                role="system",
-                content="You judge how well-grounded a mined explanation is; assign a calibrated confidence in [0,1].",
-            ),
-            Msg(
-                role="user",
-                content=(
-                    f"TASK: ground\nTitle: {candidate.title}\nBody: {candidate.body}\n"
-                    'Return JSON only: {"confidence": 0.0-1.0, "source_ref": "..."}'
-                ),
-            ),
-        ]
+        independent of companion; the *scoring* is shared via `app.grounding` so
+        the two gates can't drift). A conversation is a lead, not authority.
+
+        Routed through the fast gateway lane on purpose — the only lane with
+        injected live web search — and scored deterministically from the model's
+        per-claim verdicts, never self-reported."""
+        from ...grounding import GROUND_SYSTEM, ground_user_prompt, score_verdicts
         from ...jsonutil import parse_json
 
-        data = parse_json(await self._llm.complete(msgs, "reason"))
+        msgs = [
+            Msg(role="system", content=GROUND_SYSTEM),
+            Msg(
+                role="user",
+                content=ground_user_prompt(candidate.title, candidate.body),
+            ),
+        ]
+        data = parse_json(await self._llm.complete(msgs, "fast"))
         data = data if isinstance(data, dict) else {}
+        if "claims" in data:
+            confidence, _sources = score_verdicts(data.get("claims"))
+            # source_ref stays "{tag}#span{i}" — purge_by_source keys on that
+            # prefix, so mined provenance must never be overwritten by a URL.
+            return candidate.model_copy(update={"confidence": confidence})
+        # Legacy self-reported shape — degrade, don't crash.
         try:
             confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
         except (TypeError, ValueError):

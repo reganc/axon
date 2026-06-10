@@ -11,6 +11,7 @@ import logging
 from collections.abc import AsyncIterator
 
 from ...config import Settings, get_settings
+from ...grounding import GROUND_SYSTEM, ground_user_prompt, score_verdicts
 from ...jsonutil import parse_json
 from ...ports import CandidateNode, LLMPort, Msg, Node
 from .levels import level_clause
@@ -113,11 +114,17 @@ class NodeGenerator:
 
 
 class Researcher:
-    """Ground a generated candidate: set confidence + source_ref (tier=reason).
+    """Ground a generated candidate: set confidence + source_ref (tier=fast).
 
     Authored/locked content is never sent here. Conversations are leads, not
     authority — below the confidence floor the node is kept but flagged (its low
     confidence is the flag), never published as settled fact.
+
+    Grounding goes through the *fast gateway lane on purpose*: it is the only
+    lane with injected live web search, so the model verifies claims against
+    actual evidence instead of rating its own output from memory. The model
+    returns per-claim verdicts; confidence is computed deterministically by
+    `score_verdicts`, never self-reported.
     """
 
     def __init__(self, llm: LLMPort, settings: Settings | None = None) -> None:
@@ -128,37 +135,33 @@ class Researcher:
         self, candidate: CandidateNode, *, checkout_id=None, user_id=None
     ) -> CandidateNode:
         msgs = [
-            Msg(
-                role="system",
-                content=(
-                    "You are AXON's Researcher. Judge how well-grounded a generated "
-                    "explanation is and assign a calibrated confidence in [0,1]."
-                ),
-            ),
+            Msg(role="system", content=GROUND_SYSTEM),
             Msg(
                 role="user",
-                content=(
-                    f"TASK: ground\nTitle: {candidate.title}\n"
-                    f"Body: {candidate.body}\n"
-                    'Return JSON only: {"confidence": 0.0-1.0, "source_ref": "..."}'
-                ),
+                content=ground_user_prompt(candidate.title, candidate.body),
             ),
         ]
+        # No task routing: the cost controller would bounce this to the cloud
+        # tier, which has no web search. Local lane is also free.
         data = parse_json(
             await self._llm.complete(
-                msgs, "reason", task="ground", checkout_id=checkout_id, user_id=user_id
+                msgs, "fast", checkout_id=checkout_id, user_id=user_id
             )
         )
         data = data if isinstance(data, dict) else {}
-        try:
-            confidence = _clamp01(float(data.get("confidence", 0.5)))
-        except (TypeError, ValueError):
-            confidence = 0.5
+        if "claims" in data:
+            confidence, sources = score_verdicts(data.get("claims"))
+            source_ref = sources[0] if sources else candidate.source_ref
+        else:
+            # Legacy self-reported shape — tolerated when the model ignores the
+            # verdict format, so a malformed reply degrades instead of crashing.
+            try:
+                confidence = _clamp01(float(data.get("confidence", 0.5)))
+            except (TypeError, ValueError):
+                confidence = 0.5
+            source_ref = data.get("source_ref") or candidate.source_ref
         return candidate.model_copy(
-            update={
-                "confidence": confidence,
-                "source_ref": data.get("source_ref") or candidate.source_ref,
-            }
+            update={"confidence": confidence, "source_ref": source_ref}
         )
 
     @property
