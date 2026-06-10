@@ -182,7 +182,9 @@ class Elaborator:
         self._llm = llm
         self._s = settings or get_settings()
 
-    def explain(self, node: Node, level: str | None = None) -> AsyncIterator[str]:
+    def explain(
+        self, node: Node, level: str | None = None, learner_clause: str = ""
+    ) -> AsyncIterator[str]:
         msgs = [
             Msg(
                 role="system",
@@ -192,6 +194,7 @@ class Elaborator:
                     "concrete example, then why it matters. Flowing spoken prose, no "
                     "markdown, no headings, no lists, no citations."
                     + level_clause(level)
+                    + learner_clause
                 ),
             ),
             Msg(
@@ -293,7 +296,12 @@ class Conversationalist:
         self._s = settings or get_settings()
 
     def reply(
-        self, node: Node, history: list[dict], question: str, level: str | None = None
+        self,
+        node: Node,
+        history: list[dict],
+        question: str,
+        level: str | None = None,
+        learner_clause: str = "",
     ) -> AsyncIterator[str]:
         convo = "\n".join(f"{t['role']}: {t['text']}" for t in history) or "(none yet)"
         msgs = [
@@ -305,6 +313,7 @@ class Conversationalist:
                     "and build on what was already said — don't repeat it. Flowing "
                     "spoken prose, no markdown, no headings, no lists, no citations."
                     + level_clause(level)
+                    + learner_clause
                 ),
             ),
             Msg(

@@ -200,9 +200,7 @@ async def test_explain_node_reopen_serves_from_cache(seeded, seams):
     first_says = [e.data["text"] for e in first if e.type == "say"]
     second_says = [e.data["text"] for e in second if e.type == "say"]
     assert second_says == first_says
-    assert all(
-        e.data.get("node_id") == str(node.id) for e in second if e.type == "say"
-    )
+    assert all(e.data.get("node_id") == str(node.id) for e in second if e.type == "say")
 
     # material cards re-surface as reuse events; nothing new persists
     assert after == before
@@ -224,6 +222,43 @@ async def test_dive_cache_is_level_scoped(seeded, seams):
     _ = [e async for e in comp.explain_node(checkout.id, node.id, level="kid")]
     _ = [e async for e in comp.explain_node(checkout.id, node.id, level="expert")]
     assert len(dive_cache.store) == 2
+
+
+async def test_dive_cache_keys_on_mastery_band(seeded, seams):
+    """A learner with recorded confusion gets a 'shaky' dive — cached apart
+    from the default one — while plain engagement stays in 'default' so a
+    reopen still hits."""
+    from app.ports import InteractionEvent
+    from app.seams.companion.cache import MemoryDiveCache
+
+    dive_cache = MemoryDiveCache()
+    comp = make_companion(seams, plan=[], dive_cache=dive_cache)
+    node = await seams.content.get_node_by_key("gradient-based-learning")
+    if node is None:  # seed key differs across fixtures — fall back
+        node = await seams.content.get_node_by_key("backpropagation")
+    checkout = await _free_checkout(seams, "bands")
+
+    _ = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert all(":default:" in k for k in dive_cache.store)
+
+    # reopen: the dive's own engagement must not have changed the band
+    before = len(dive_cache.store)
+    _ = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert len(dive_cache.store) == before  # hit, not a new entry
+
+    # explicit struggle -> shaky -> a differently-keyed, gentler dive
+    for _i in range(2):
+        await seams.learning.record(
+            InteractionEvent(
+                checkout_id=checkout.id,
+                node_id=node.id,
+                event_type="confused",
+                payload={},
+            )
+        )
+    await seams.learning.update_mastery(checkout.id, node.id)
+    _ = [e async for e in comp.explain_node(checkout.id, node.id)]
+    assert any(":shaky:" in k for k in dive_cache.store)
 
 
 async def test_explain_derived_artifact_is_terminal(seeded, seams):

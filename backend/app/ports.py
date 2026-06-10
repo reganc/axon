@@ -165,6 +165,27 @@ class NodeState(BaseModel):
     learner_notes: str | None = None
 
 
+class NodeMastery(BaseModel):
+    node_id: UUID
+    mastery: float
+
+
+class LearnerContext(BaseModel):
+    """A compact read of what this learner knows, for prompt conditioning.
+
+    `focus_mastery` is the focal node's mastery (None until first tracked) and
+    `focus_confusions` its recorded confusion count — explicit struggle, not
+    just low engagement. `weakest`/`strongest` are the checkout's low/high-
+    mastery nodes (the focal node excluded), so the companion can mind the
+    gaps and build on strengths.
+    """
+
+    focus_mastery: float | None = None
+    focus_confusions: int = 0
+    weakest: list[NodeMastery] = Field(default_factory=list)
+    strongest: list[NodeMastery] = Field(default_factory=list)
+
+
 class CandidateNode(BaseModel):
     title: str
     kind: NodeKind = "concept"  # study materials persist as artifact/question nodes
@@ -257,6 +278,9 @@ class LearningPort(Protocol):
     async def record(self, event: InteractionEvent) -> None: ...
     async def update_mastery(self, checkout_id: UUID, node_id: UUID) -> float: ...
     async def due_reviews(self, checkout_id: UUID) -> list[UUID]: ...
+    async def learner_context(
+        self, checkout_id: UUID, node_id: UUID | None = None
+    ) -> LearnerContext: ...
 
 
 @runtime_checkable

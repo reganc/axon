@@ -83,6 +83,39 @@ def _ev(type_: str, **data) -> StreamEvent:
     return StreamEvent(type=type_, data=data)
 
 
+# Mastery bands for prompt conditioning. The *band* (not the raw float) keys the
+# dive cache, so personalization stays coarse enough to share cached dives.
+# Only three bands, and "default" covers both new and developing learners: mere
+# engagement (a view, a dive) must not change the band, or a card would miss
+# its own cache on reopen. "shaky" needs *negative evidence* — recorded
+# confusion — not just low mastery; "strong" needs real demonstrated grasp.
+_MASTERY_SHAKY = 0.35
+_MASTERY_STRONG = 0.70
+
+
+def _mastery_band(mastery: float | None, confusions: int = 0) -> str:
+    if mastery is not None and mastery >= _MASTERY_STRONG:
+        return "strong"
+    if mastery is not None and confusions > 0 and mastery < _MASTERY_SHAKY:
+        return "shaky"
+    return "default"
+
+
+def _band_clause(band: str) -> str:
+    """How the focal node's mastery band shapes the talk. 'default' gets the
+    baseline register — no clause."""
+    return {
+        "shaky": (
+            " This learner has struggled with this concept before — rebuild it "
+            "gently from first principles and check the intuition as you go."
+        ),
+        "strong": (
+            " This learner already has a solid grasp of this concept — skip "
+            "the basics and go straight to depth, nuance, and edge cases."
+        ),
+    }.get(band, "")
+
+
 def _node_payload(node: Node) -> dict:
     return {
         "id": str(node.id),
@@ -251,13 +284,11 @@ class Companion:
                         pending.appendleft((redirect, _launch(redirect)))
                         yield _ev("say", text=f"Sure — let's switch to {redirect}.")
                 elif barge and barge.get("type") == "answer":
-                    await self._learning.record(
-                        InteractionEvent(
-                            checkout_id=cid,
-                            node_id=prev_id,
-                            event_type="explained_back",
-                            payload={"text": barge.get("text", "")},
-                        )
+                    await self._track(
+                        cid,
+                        prev_id,
+                        "explained_back",
+                        {"text": barge.get("text", "")},
                     )
 
                 title, task = pending.popleft()
@@ -281,14 +312,7 @@ class Companion:
                         },
                     )
 
-                await self._learning.record(
-                    InteractionEvent(
-                        checkout_id=cid,
-                        node_id=node.id,
-                        event_type="viewed",
-                        payload={},
-                    )
-                )
+                await self._track(cid, node.id, "viewed")
                 prev_id = node.id
                 produced += 1
                 _fill()
@@ -336,14 +360,7 @@ class Companion:
                 "type": edge.type,
             },
         )
-        await self._learning.record(
-            InteractionEvent(
-                checkout_id=cid,
-                node_id=node.id,
-                event_type="rabbit_hole_followed",
-                payload={},
-            )
-        )
+        await self._track(cid, node.id, "rabbit_hole_followed")
         yield _ev("done", nodes=1)
 
     async def explore_question(
@@ -384,11 +401,7 @@ class Companion:
                         "type": edge.type,
                     },
                 )
-            await self._learning.record(
-                InteractionEvent(
-                    checkout_id=cid, node_id=node.id, event_type="viewed", payload={}
-                )
-            )
+            await self._track(cid, node.id, "viewed")
             produced += 1
         yield _ev("done", nodes=produced)
 
@@ -409,11 +422,20 @@ class Companion:
         node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
         yield _ev("status", phase="explaining", detail=node.title)
 
-        # Cache check: a dive for this exact node content + level may already
-        # exist (this or any other session). A hit narrates instantly and
-        # replays the material cards from the DB — zero LLM calls.
+        # How well does this learner know this card already? The coarse band
+        # shapes the talk (and keys the cache) — shaky learners get first
+        # principles, strong ones get depth.
+        ctx = await self._learning.learner_context(cid, nid)
+        band = _mastery_band(ctx.focus_mastery, ctx.focus_confusions)
+
+        # Cache check: a dive for this exact node content + level + mastery band
+        # may already exist (this or any other session). A hit narrates
+        # instantly and replays the material cards from the DB — zero LLM calls.
         key = cache.dive_key(
-            nid, level, f"{node.title}\n{node.hook or ''}\n{node.body or ''}"
+            nid,
+            level,
+            f"{node.title}\n{node.hook or ''}\n{node.body or ''}",
+            band=band,
         )
         hit = await self._dive_cache.get(key) if self._dive_cache else None
         if hit is not None:
@@ -426,7 +448,9 @@ class Companion:
         #    persist at the canonical register regardless of the learner's level.
         buf = ""
         spoken: list[str] = []
-        async for chunk in self._elaborator.explain(node, level=level):
+        async for chunk in self._elaborator.explain(
+            node, level=level, learner_clause=_band_clause(band)
+        ):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
             for s in sentences:
@@ -443,11 +467,7 @@ class Companion:
         # Analogy: …", "A deeper look at A deeper look at …"), so we accrete
         # study materials only off real concepts.
         if _is_derived(node):
-            await self._learning.record(
-                InteractionEvent(
-                    checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
-                )
-            )
+            await self._track(cid, nid, "deep_dive")
             if self._dive_cache:
                 await self._dive_cache.put(
                     key, {"sentences": spoken, "materials": [], "edges": []}
@@ -486,11 +506,7 @@ class Companion:
                 yield _ev("edge.create", edge=edge_payload)
             produced += 1
 
-        await self._learning.record(
-            InteractionEvent(
-                checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
-            )
-        )
+        await self._track(cid, nid, "deep_dive")
         # Cache only after the full dive completed — a cancelled stream (card
         # closed, superseded) never caches a truncated explanation.
         if self._dive_cache:
@@ -529,11 +545,7 @@ class Companion:
             for e in hit.get("edges") or []:
                 if e.get("src_node") in known and e.get("dst_node") in known:
                     yield _ev("edge.create", edge=e)
-        await self._learning.record(
-            InteractionEvent(
-                checkout_id=cid, node_id=nid, event_type="deep_dive", payload={}
-            )
-        )
+        await self._track(cid, nid, "deep_dive")
         yield _ev("done", nodes=0)
 
     async def discuss(
@@ -556,12 +568,19 @@ class Companion:
         history = await self._discussion_history(cid, nid)
         yield _ev("discuss", node_id=str(nid), role="learner", text=message)
 
+        # Personal context for the reply: discussion is uncached and one-to-one,
+        # so it gets the full read — focal mastery band plus the learner's
+        # weak/strong neighboring concepts.
+        learner = await self._learner_clause(
+            await self._learning.learner_context(cid, nid)
+        )
+
         # 1) streamed answer — whole sentences so TTS reads naturally; pinned to
         #    the card via node_id (same path the deep-dive narration uses).
         buf = ""
         parts: list[str] = []
         async for chunk in self._conversationalist.reply(
-            node, history, message, level=level
+            node, history, message, level=level, learner_clause=learner
         ):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
@@ -574,14 +593,7 @@ class Companion:
             yield _ev("say", text=tail, node_id=str(nid))
         answer = " ".join(parts)
 
-        await self._learning.record(
-            InteractionEvent(
-                checkout_id=cid,
-                node_id=nid,
-                event_type="discussed",
-                payload={"message": message},
-            )
-        )
+        await self._track(cid, nid, "discussed", {"message": message})
 
         # 2) auto-accrete: did the exchange surface a genuinely new concept? If so,
         #    build it (reuse-or-generate+ground) and link it back to this card.
@@ -729,6 +741,52 @@ class Companion:
         node, persist_events = await self._persist_candidate(candidate)
         events.extend(persist_events)
         return node, events
+
+    async def _track(
+        self, cid: UUID, nid: UUID | None, event_type: str, payload: dict | None = None
+    ) -> None:
+        """Record a learner interaction AND recompute the node's mastery — the
+        two must travel together, or events accrete while the mastery model
+        never moves (the bug this helper retires)."""
+        await self._learning.record(
+            InteractionEvent(
+                checkout_id=cid,
+                node_id=nid,
+                event_type=event_type,
+                payload=payload or {},
+            )
+        )
+        if nid is not None:
+            await self._learning.update_mastery(cid, nid)
+
+    async def _learner_clause(self, ctx) -> str:
+        """The full personal clause for *uncached* talk (discussion replies):
+        focal-node band plus the learner's weak/strong neighboring concepts,
+        titles resolved through the content port."""
+        parts: list[str] = []
+        band_text = _band_clause(_mastery_band(ctx.focus_mastery, ctx.focus_confusions))
+        if band_text:
+            parts.append(band_text.strip())
+        ids = [nm.node_id for nm in [*ctx.weakest, *ctx.strongest]]
+        titles: dict = {}
+        if ids:
+            sub = await self._content.get_subgraph(ids, depth=0)
+            titles = {n.id: n.title for n in sub.nodes}
+        weak = [titles[nm.node_id] for nm in ctx.weakest if nm.node_id in titles]
+        strong = [titles[nm.node_id] for nm in ctx.strongest if nm.node_id in titles]
+        if weak:
+            parts.append(
+                "They have been struggling with "
+                + ", ".join(weak)
+                + " — watch for gaps from there."
+            )
+        if strong:
+            parts.append(
+                "They are confident with "
+                + ", ".join(strong)
+                + " — build on those when it helps."
+            )
+        return (" " + " ".join(parts)) if parts else ""
 
     async def _persist_candidate(
         self, candidate: CandidateNode

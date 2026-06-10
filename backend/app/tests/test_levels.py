@@ -103,3 +103,39 @@ async def test_node_generator_is_never_leveled():
     await gen.generate("Backpropagation", "neural networks")
     for lvl in VALID_LEVELS:
         assert level_clause(lvl).strip() not in _sys(llm)
+
+
+def test_learner_clause_reaches_talk_prompts_only_when_set():
+    """The personal clause (mastery band / struggles / strengths) conditions the
+    talk agents' system prompts, and its absence leaves the baseline prompt."""
+    llm = _CapturingLLM()
+    el = Elaborator(llm)
+
+    el.explain(
+        _NODE, learner_clause=" This learner has struggled with this concept before."
+    )
+    assert "struggled" in _sys(llm)
+    el.explain(_NODE)
+    assert "struggled" not in _sys(llm)
+
+    cv = Conversationalist(llm)
+    cv.reply(
+        _NODE, [], "why?", learner_clause=" They are confident with Gradient Descent."
+    )
+    assert "confident with Gradient Descent" in _sys(llm)
+    cv.reply(_NODE, [], "why?")
+    assert "confident" not in _sys(llm)
+
+
+def test_mastery_band_semantics():
+    """'shaky' requires negative evidence (confusion), not just low engagement,
+    and mere engagement never moves a learner out of 'default' — otherwise a
+    card would miss its own dive cache on reopen."""
+    from app.seams.companion import _mastery_band
+
+    assert _mastery_band(None) == "default"  # never seen
+    assert _mastery_band(0.05) == "default"  # opened once — engagement only
+    assert _mastery_band(0.05, confusions=2) == "shaky"
+    assert _mastery_band(0.5, confusions=2) == "default"  # recovered past shaky
+    assert _mastery_band(0.85) == "strong"
+    assert _mastery_band(0.85, confusions=3) == "strong"  # mastery won

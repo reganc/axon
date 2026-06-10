@@ -23,10 +23,12 @@ from ... import bus
 log = logging.getLogger("axon.companion.cache")
 
 
-def dive_key(node_id, level: str | None, content: str) -> str:
-    """`axon:dive:{node}:{level}:{content-fingerprint}`."""
+def dive_key(node_id, level: str | None, content: str, band: str = "-") -> str:
+    """`axon:dive:{node}:{level}:{mastery-band}:{content-fingerprint}` — the
+    coarse mastery band keeps personalized dives shareable across learners in
+    the same band instead of fragmenting the cache per learner."""
     digest = hashlib.sha1(content.encode("utf-8")).hexdigest()[:12]
-    return f"axon:dive:{node_id}:{level or 'default'}:{digest}"
+    return f"axon:dive:{node_id}:{level or 'default'}:{band}:{digest}"
 
 
 class RedisDiveCache:

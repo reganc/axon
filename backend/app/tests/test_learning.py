@@ -76,3 +76,43 @@ async def test_due_reviews_surface_once_past_due(seeded, seams):
         n=nid,
     )
     assert nid in await seams.learning.due_reviews(cid)
+
+
+async def test_learner_context_reads_focus_weak_strong(seeded, seams):
+    """The prompt-conditioning read: focal mastery + confusions, plus the
+    checkout's weak/strong nodes with the focal node excluded."""
+    user_id = uuid4()
+    checkout = await seams.library.checkout(user_id, FOUNDATIONS_SPINE_ID, None)
+    spine = await seams.content.get_spine(FOUNDATIONS_SPINE_ID)
+    cid = checkout.id
+    focal, weak, strong = (spine.nodes[i].id for i in range(3))
+
+    async def feed(nid, *event_types, payload=None):
+        for et in event_types:
+            await seams.learning.record(
+                InteractionEvent(
+                    checkout_id=cid, node_id=nid, event_type=et, payload=payload or {}
+                )
+            )
+        await seams.learning.update_mastery(cid, nid)
+
+    await feed(focal, "viewed", "confused")  # 0.03 - 0.25 -> 0.0, 1 confusion
+    await feed(weak, "confused", "confused")  # -> 0.0, 2 confusions
+    await feed(
+        strong,
+        "explained_back",
+        "hook_engaged",
+        "rabbit_hole_followed",
+        "asked_question",
+        "viewed",
+        "deep_dive",
+        "discussed",
+    )  # -> 0.73
+
+    ctx = await seams.learning.learner_context(cid, focal)
+    assert ctx.focus_mastery == 0.0
+    assert ctx.focus_confusions == 1
+    assert any(nm.node_id == weak for nm in ctx.weakest)
+    assert any(nm.node_id == strong and nm.mastery >= 0.7 for nm in ctx.strongest)
+    # the focal node never appears in its own context lists
+    assert all(nm.node_id != focal for nm in [*ctx.weakest, *ctx.strongest])
