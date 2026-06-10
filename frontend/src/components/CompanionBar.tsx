@@ -45,6 +45,9 @@ export function CompanionBar({
   const route = (value: string) => {
     const v = value.trim();
     if (!v) return;
+    // Text barge-in: addressing Jarvis cuts him off mid-sentence, same as the
+    // mic does — otherwise the reply queues behind stale narration clips.
+    stopSpeaking();
     if (ask) onAnswer(v);
     else if (busy) onInterrupt(v);
     else onSubject(v);

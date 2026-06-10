@@ -130,6 +130,17 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
     }
   }, [checkoutId, initGraph, initTranscript]);
 
+  // Asking a follow-up on a card is a barge-in too: the deep-dive narration
+  // stops so the answer doesn't queue behind it (the backend already cancels
+  // the superseded stream; this drops the clips that were already in flight).
+  const onDiscuss = useCallback(
+    (nodeId: string, text: string) => {
+      stopSpeaking();
+      discuss(nodeId, text);
+    },
+    [discuss],
+  );
+
   const onExplore = (node: GNode) => {
     if (node.kind === "question") exploreQuestion(node.id);
     else pullThread(node.id);
@@ -208,7 +219,7 @@ function LearnInner({ checkoutId }: { checkoutId: string }) {
           onClose={closeDetail}
           onExplore={onExplore}
           onDeepDive={explain}
-          onDiscuss={discuss}
+          onDiscuss={onDiscuss}
           onRequestMedia={requestMedia}
         />
       )}
