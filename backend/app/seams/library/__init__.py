@@ -38,9 +38,12 @@ from ...tables import (
 )
 from ..content import _NODE_COLS, _row_to_node
 
-# Stream-event types worth persisting for session replay (canvas + transcript);
-# transient control events (status/done) are not stored.
-_REPLAYABLE = {"say", "ask", "node.create", "node.update", "edge.create"}
+# Stream-event types worth persisting for session replay (canvas + transcript).
+# `discuss` carries the learner's own turns: persisting them replays both sides
+# of a card chat (the StreamEvent contract) AND lets the companion mine live
+# dialogue back into the graph. Transient control events (status/done) aren't
+# stored.
+_REPLAYABLE = {"say", "ask", "discuss", "node.create", "node.update", "edge.create"}
 
 # Cold-start home screen surfaces these anchor kinds (Phase 5 §5/§6).
 ENTRY_POINT_KINDS = ("question", "person")
@@ -261,6 +264,19 @@ class Library:
                 .where(checkouts.c.id == cid)
                 .values(companion_memory=memory)
             )
+
+    async def read_companion_memory(self, checkout_id: UUID) -> dict:
+        """The Tutor's stored memory for a checkout (empty dict if none). Read side
+        of merge_companion_memory — used for the live-mining watermark."""
+        async with self._sm() as session:
+            row = (
+                await session.execute(
+                    select(checkouts.c.companion_memory).where(
+                        checkouts.c.id == UUID(str(checkout_id))
+                    )
+                )
+            ).first()
+        return dict(row._mapping[checkouts.c.companion_memory] or {}) if row else {}
 
     async def checkout_owner(self, checkout_id: UUID) -> UUID | None:
         """Owner of a checkout, for `checkout:read:self` enforcement at the router."""

@@ -41,6 +41,10 @@ router = APIRouter()
 
 _POLICY_VIOLATION = 1008
 
+# Background session-mining tasks, held so the event loop doesn't GC them mid-run
+# (asyncio keeps only a weak reference to a bare create_task result).
+_mining_tasks: set[asyncio.Task] = set()
+
 
 @router.websocket("/ws/companion/{checkout_id}")
 async def companion_ws(ws: WebSocket, checkout_id: UUID):
@@ -147,7 +151,30 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
         for task in (turn, aux, media):
             if task and not task.done():
                 task.cancel()
+        # Distil this session's learner dialogue into the library off the hot path:
+        # fire-and-forget so the close returns immediately while mining runs in the
+        # background. Resolve the companion now (so a test monkeypatch still wins).
+        _schedule_session_mining(companion(), cid)
         await _safe_close(ws)
+
+
+def _schedule_session_mining(comp, checkout_id) -> None:
+    task = asyncio.create_task(_mine_session_safe(comp, checkout_id))
+    _mining_tasks.add(task)
+    task.add_done_callback(_mining_tasks.discard)
+
+
+async def _mine_session_safe(comp, checkout_id) -> None:
+    try:
+        produced = await comp.mine_session(checkout_id)
+        if produced:
+            log.info(
+                "session %s mined %d node(s) from live dialogue",
+                checkout_id,
+                produced,
+            )
+    except Exception:  # never let background mining surface on the closed socket
+        log.exception("session mining failed for checkout %s", checkout_id)
 
 
 def _bearer(header: str | None) -> str | None:
