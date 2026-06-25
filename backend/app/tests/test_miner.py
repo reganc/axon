@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from uuid import uuid4
 
 from app.config import Settings
+from app.ports import Msg
 from app.seams.ingestion import miner
 
 from .conftest import make_miner, requires_db, scalar
@@ -284,6 +286,64 @@ async def test_subfloor_confidence_is_flagged(seeded, seams, tmp_path):
     assert (
         node.confidence < Settings().companion_confidence_floor
     )  # flagged, not settled fact
+
+
+@requires_db
+async def test_mine_turns_distils_a_live_dialogue(seeded, seams):
+    """The companion's live-mining entry point: a learner/tutor transcript runs the
+    same extract -> ground -> canonicalize pipeline and accretes a grounded node."""
+    ing = make_miner(
+        seams, _extract_ground_handler(lambda _u: "Attention in transformers")
+    )
+    tag = f"session-{uuid4()}"
+    turns = [
+        Msg(
+            role="user",
+            content="Why does self-attention model long-range dependencies that an "
+            "RNN struggles to carry across many time steps?",
+        ),
+        Msg(
+            role="assistant",
+            content="Every token attends directly to every other token in a single "
+            "step, so a dependency between distant positions is one hop rather than "
+            "a signal carried through many recurrent steps where it can vanish.",
+        ),
+    ]
+
+    report = await ing.mine_turns(turns, tag)
+
+    assert report.nodes + report.merged >= 1
+    node = await seams.content.get_node_by_key("attention-in-transformers")
+    assert node is not None
+    assert node.origin in ("ai_generated", "ai_extended")
+    assert node.source_ref and node.source_ref.startswith(f"{tag}#")
+
+
+@requires_db
+async def test_mine_turns_redacts_before_persist(seeded, seams):
+    ing = make_miner(
+        seams, _extract_ground_handler(lambda _u: "Session secret handling")
+    )
+    turns = [
+        Msg(
+            role="user",
+            content="I pasted OPENAI_API_KEY=sk-LEAKEDsession9999999999 into the chat "
+            "while we debugged the deployment and the vector store wiring.",
+        ),
+        Msg(
+            role="assistant",
+            content="Never paste a live key into a prompt — rotate it immediately and "
+            "load it from the environment so secrets stay out of any stored transcript.",
+        ),
+    ]
+
+    report = await ing.mine_turns(turns, "session-leak")
+    assert report.redacted >= 1
+    leaked = await scalar(
+        "SELECT count(*) FROM canonical_nodes "
+        "WHERE body LIKE '%sk-LEAKEDsession%' OR hook LIKE '%sk-LEAKEDsession%'"
+    )
+    assert leaked == 0
 
 
 @requires_db

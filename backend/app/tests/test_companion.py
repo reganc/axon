@@ -9,12 +9,31 @@ from app.ports import CandidateNode
 from app.seams.ingestion import normalize_key
 
 from .conftest import make_companion, requires_db, scalar
+from .test_miner import _extract_ground_handler
 
 pytestmark = requires_db
 
 
 async def _free_checkout(seams, subject: str):
     return await seams.library.checkout(uuid4(), None, subject)
+
+
+def _mining_companion(seams, title_for):
+    """A companion whose ingestion carries a scripted miner LLM, so mine_session
+    can run the extract -> ground -> canonicalize pipeline deterministically."""
+    from app.seams.companion import Companion
+    from app.seams.companion.llm import LLMGateway
+    from app.seams.ingestion import Ingestion
+
+    gateway = LLMGateway.scripted(_extract_ground_handler(title_for), seams.embedder)
+    ingestion = Ingestion(content=seams.content, embedder=seams.embedder, llm=gateway)
+    return Companion(
+        llm=gateway,
+        library=seams.library,
+        ingestion=ingestion,
+        content=seams.content,
+        learning=seams.learning,
+    )
 
 
 async def test_run_turn_streams_and_persists_generated_node(seeded, seams):
@@ -456,3 +475,69 @@ async def test_explain_node_strips_citation_markers(seeded, seams):
     remaining, sentences = _flush_sentences("One sentence. A second one. tail")
     assert sentences == ["One sentence.", "A second one."]
     assert remaining.strip() == "tail"
+
+
+# ---------------------------------------------------------------------------
+# Live-dialogue mining: the learner's own words accrete into the library
+# ---------------------------------------------------------------------------
+
+
+async def test_mine_session_distils_learner_dialogue(seeded, seams):
+    """A session's learner/tutor turns get distilled into a grounded node through
+    the canonicalize chokepoint, tagged with the session's provenance."""
+    checkout = await _free_checkout(seams, "vector search")
+    cid = checkout.id
+    # Record the dialogue exactly as the WS durable log would: a learner `discuss`
+    # turn plus the Tutor's `say` reply, each long enough to survive the min-span
+    # coherence filter.
+    await seams.library.record_event(
+        cid,
+        "discuss",
+        {
+            "node_id": str(uuid4()),
+            "role": "learner",
+            "text": "How does approximate nearest-neighbour search trade recall for "
+            "speed inside a vector index when the dataset is large?",
+        },
+    )
+    await seams.library.record_event(
+        cid,
+        "say",
+        {
+            "node_id": str(uuid4()),
+            "text": "IVFFlat partitions vectors into lists and probes only a few, so "
+            "raising the probe count buys recall at the cost of latency in a vector "
+            "index — that is the recall/speed knob.",
+        },
+    )
+    # A title unique to this test, so the session mine *creates* the node (and we
+    # can assert its session provenance) rather than merging into one a sibling
+    # miner test already left in the shared seeded DB.
+    comp = _mining_companion(seams, lambda _u: "Live session ANN probe budget tradeoff")
+
+    produced = await comp.mine_session(cid)
+
+    assert produced >= 1
+    node = await seams.content.get_node_by_key("live-session-ann-probe-budget-tradeoff")
+    assert node is not None
+    assert node.source_ref and node.source_ref.startswith(f"session-{cid}#")
+
+    # Idempotent: nothing new on the next close — the watermark stops a re-mine.
+    assert await comp.mine_session(cid) == 0
+
+
+async def test_mine_session_skips_when_no_learner_words(seeded, seams):
+    """A pure generation session (tutor `say` only, no learner turn) mines nothing
+    — those nodes already canonicalized live — and advances the watermark."""
+    checkout = await _free_checkout(seams, "no dialogue")
+    cid = checkout.id
+    await seams.library.record_event(
+        cid,
+        "say",
+        {"text": "A tutor narration line with no learner turn anywhere in it."},
+    )
+    comp = _mining_companion(seams, lambda _u: "Should not be created")
+
+    assert await comp.mine_session(cid) == 0
+    assert await comp.mine_session(cid) == 0  # watermark advanced, still nothing
+    assert await seams.content.get_node_by_key("should-not-be-created") is None

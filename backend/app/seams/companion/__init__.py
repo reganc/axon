@@ -22,7 +22,14 @@ from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
 from ...config import Settings, get_settings
-from ...ports import CandidateNode, InteractionEvent, Node, StreamEvent
+from ...ports import (
+    CandidateNode,
+    ConversationEvent,
+    InteractionEvent,
+    Msg,
+    Node,
+    StreamEvent,
+)
 from ..ingestion import normalize_key
 from . import cache
 from . import media_validation as mv
@@ -679,6 +686,38 @@ class Companion:
             )
         )
 
+    async def mine_session(self, checkout_id: UUID) -> int:
+        """Distill the learner's live dialogue into the library — the dialogue side
+        of the self-augmenting loop (companion-generated nodes already accrete; the
+        learner's own words did not until now).
+
+        Reads the durable conversation, builds a learner/tutor transcript from the
+        turns added since the last mined watermark, and — only if the learner
+        actually spoke — runs it through the ingestion miner (segment -> extract ->
+        ground -> canonicalize). Idempotent: the canonicalize chokepoint dedups and
+        the per-checkout watermark stops a reconnect from re-mining settled turns.
+        Returns the number of nodes created or merged.
+        """
+        cid = UUID(str(checkout_id))
+        events = await self._library.get_conversation(cid)
+        memory = await self._library.read_companion_memory(cid)
+        mined_through = int(memory.get("mined_through", 0) or 0)
+        if mined_through >= len(events):
+            return 0  # nothing new since the last close
+
+        turns = _session_turns(events[mined_through:])
+        if not any(t.role == "user" for t in turns):
+            # No fresh learner words to distil — the tutor's nodes already
+            # canonicalized live. Advance the watermark so we don't re-scan them.
+            await self._library.merge_companion_memory(
+                cid, {"mined_through": len(events)}
+            )
+            return 0
+
+        report = await self._ingestion.mine_turns(turns, f"session-{cid}")
+        await self._library.merge_companion_memory(cid, {"mined_through": len(events)})
+        return report.nodes + report.merged
+
     async def _discussion_history(self, cid: UUID, nid: UUID) -> list[dict]:
         """Reconstruct this card's prior turns from the durable conversation log:
         the learner's `discuss` turns and the Tutor's `say` lines pinned to the
@@ -824,6 +863,25 @@ class Companion:
                 )
             )
         return node, events
+
+
+def _session_turns(events: list[ConversationEvent]) -> list[Msg]:
+    """Reduce a slice of the durable conversation to a learner/tutor transcript for
+    mining: learner `discuss` turns become role='user', the Tutor's `say` lines
+    role='assistant', in order. The interleaving keeps each learner question next
+    to the answer it provoked, so a span carries enough context to distil one
+    concept. Structural events (node/edge) are dropped — they already accreted."""
+    turns: list[Msg] = []
+    for ev in events:
+        if ev.type == "discuss" and ev.data.get("role") == "learner":
+            text = (ev.data.get("text") or "").strip()
+            if text:
+                turns.append(Msg(role="user", content=text))
+        elif ev.type == "say":
+            text = (ev.data.get("text") or "").strip()
+            if text:
+                turns.append(Msg(role="assistant", content=text))
+    return turns
 
 
 def _drain(inbox: asyncio.Queue | None) -> dict | None:

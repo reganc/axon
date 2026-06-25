@@ -30,6 +30,9 @@ from . import miner
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 _SOURCE_KINDS = {"claude_code_transcript", "obsidian_note"}
+# Live companion dialogue mined back into the library (mine_turns); kept out of
+# _SOURCE_KINDS so the path-based mine() still rejects it.
+_COMPANION_SESSION_KIND = "companion_session"
 
 
 def normalize_key(text: str) -> str:
@@ -187,8 +190,53 @@ class Ingestion:
                 report.redacted += n
                 spans.append(clean)
 
+        return await self._canonicalize_spans(
+            spans, tag, report, source_kind=source_kind, source_uri=str(p)
+        )
+
+    async def mine_turns(self, turns: list[Msg], source_tag: str) -> IngestReport:
+        """Distill live companion dialogue into the canonical graph.
+
+        The companion seam assembles the learner/tutor transcript (learner turns
+        as role='user', tutor turns as role='assistant') and hands it here; this
+        runs the same redact -> segment -> drop churn -> extract -> ground ->
+        canonicalize pipeline as the batch miner, so dialogue accretes through the
+        one chokepoint. `source_tag` (e.g. "session-<checkout>") keys provenance
+        and makes the mined nodes purgeable. Idempotent via canonicalize.
+        """
+        if self._llm is None:
+            raise RuntimeError("mine_turns() requires an LLM gateway; none was wired")
+        report = IngestReport()
+        clean: list[miner.Turn] = []
+        for t in turns:
+            text, n = miner.redact(t.content)
+            report.redacted += n
+            role = "assistant" if t.role == "assistant" else "user"
+            clean.append(miner.Turn(role=role, text=text))
+        spans = await miner.segment_turns(clean, self._embed, self._s)
+        return await self._canonicalize_spans(
+            spans,
+            source_tag,
+            report,
+            source_kind=_COMPANION_SESSION_KIND,
+            source_uri=f"checkout://{source_tag}",
+        )
+
+    async def _canonicalize_spans(
+        self,
+        spans: list[str],
+        tag: str,
+        report: IngestReport,
+        *,
+        source_kind: str,
+        source_uri: str,
+    ) -> IngestReport:
+        """Shared tail of every mining path: record the source, then for each kept
+        span extract -> ground -> canonicalize and stitch within-source adjacency
+        edges. Mutates and returns `report` (redaction count is set by the caller
+        before any embed/persist)."""
         await self._content.seed_source(
-            {"id": None, "kind": source_kind, "title": tag, "uri": str(p)}
+            {"id": None, "kind": source_kind, "title": tag, "uri": source_uri}
         )
 
         extractor = miner.TranscriptExtractor(self._llm)
