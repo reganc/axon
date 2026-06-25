@@ -49,6 +49,9 @@ services:
     volumes:
       - voice_models:/models/voice   # Piper + Whisper model cache (AXON_VOICE_MODEL_DIR)
       - ./artifacts:/app/artifacts:ro  # seed graph + schema for /ingest/seed and tests
+      # Optional read-only mount of a notes vault to mine (POST /ingest/mine with
+      # /vault/... paths). Set AXON_OBSIDIAN_DIR in .env; harmless default when unset.
+      - ${AXON_OBSIDIAN_DIR:-./artifacts}:/vault:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8100/health\", timeout=3)'"]
       interval: 15s
