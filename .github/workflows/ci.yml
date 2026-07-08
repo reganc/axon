@@ -1,9 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+
+# Cancel superseded runs on the same ref instead of paying for both.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   secret-scan:
