@@ -44,6 +44,9 @@ os.environ.setdefault("AXON_DB_USE_NULLPOOL", "true")
 # must not leak into unit tests that assert code defaults. Scrub them from the
 # test process; tests that exercise a non-default set it explicitly.
 os.environ.pop("AXON_FAST_TIER", None)
+# Never warm the real TTS model inside a test run — voice tests assert that
+# nothing loads models except an explicit synthesize call.
+os.environ["AXON_TTS_WARM_ON_START"] = "false"
 
 import httpx  # noqa: E402
 import sqlalchemy as sa  # noqa: E402

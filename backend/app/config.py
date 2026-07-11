@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://host.docker.internal:8030/v1"
     llm_api_key: str = ""  # Bearer token for the gateway (set in .env)
     llm_model: str = "default"  # gateway resolves the alias to the active model
+    # Per-call ceiling for the local gateway. A local draft with search
+    # injection legitimately runs ~40s; beyond ~90s the host is wedged and the
+    # turn should degrade to the FakeLLM instead of hanging.
+    llm_timeout_s: float = 90.0
     # embeddings -> the same box's Ollama (the gateway has no embeddings endpoint)
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_embed_model: str = "nomic-embed-text"  # 768-dim

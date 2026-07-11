@@ -97,13 +97,13 @@ async def test_run_turn_materializes_in_parallel_but_emits_in_order(seeded, seam
     original = comp._materialize
     active = peak = 0
 
-    async def _instrumented(cid, title, subject, *, user_id=None):
+    async def _instrumented(cid, title, subject, *, user_id=None, sink=None):
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
         try:
             await asyncio.sleep(0.05)  # hold so concurrent tasks accumulate
-            return await original(cid, title, subject, user_id=user_id)
+            return await original(cid, title, subject, user_id=user_id, sink=sink)
         finally:
             active -= 1
 
@@ -116,6 +116,33 @@ async def test_run_turn_materializes_in_parallel_but_emits_in_order(seeded, seam
 
     assert peak >= 2  # ran concurrently, not strictly serially
     assert steps == plan  # yet emitted in exact plan order
+
+
+async def test_materialize_renders_optimistically_before_grounding(seeded, seams):
+    """The drafted card is emitted the moment it exists; grounding (the slow,
+    search-injected pass) resolves behind it as the node.update — specs/00 #6
+    reconciliation, now applied to confidence as well as canonical ids."""
+    comp = make_companion(seams, plan=[], confidence=0.9)
+    checkout = await _free_checkout(seams, "optimism")
+
+    seen: list[str] = []
+    orig_ground = comp._researcher.ground
+
+    async def spy_ground(candidate, **kw):
+        seen.append("ground")
+        return await orig_ground(candidate, **kw)
+
+    comp._researcher.ground = spy_ground
+    node, buffered = await comp._materialize(
+        checkout.id,
+        "Fresh optimistic rendering concept",
+        "optimism",
+        sink=lambda ev: seen.append(ev.type),
+    )
+
+    assert buffered == []  # the sink consumed everything
+    assert node is not None
+    assert seen.index("node.create") < seen.index("ground") < seen.index("node.update")
 
 
 async def test_generated_node_never_overwrites_locked_anchor(seeded, seams):
@@ -470,7 +497,18 @@ async def test_discuss_new_concept_accretes_a_linked_card(seeded, seams):
     # the new concept landed in the library, linked off the discussed card
     fresh = await seams.content.get_node_by_key(normalize_key(new_title))
     assert fresh is not None
-    assert events[-1].type == "done"
+    # `done` fires as soon as the spoken answer completes — accretion is
+    # housekeeping that streams in behind it (including its own `say`), never
+    # holding the thinking cue.
+    done_at = next(i for i, e in enumerate(events) if e.type == "done")
+    answer_says = [
+        i
+        for i, e in enumerate(events)
+        if e.type == "say" and e.data.get("node_id") == str(node.id)
+    ]
+    create_ids = [i for i, e in enumerate(events) if e.type == "node.create"]
+    assert done_at > max(answer_says)
+    assert done_at < min(create_ids)
 
 
 async def test_enrich_emits_only_validated_media(seeded, seams, monkeypatch):

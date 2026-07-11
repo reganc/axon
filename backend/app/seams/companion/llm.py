@@ -54,23 +54,25 @@ class GatewayChat:
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         self.model = model
         self.timeout = timeout
+        # One pooled client for the backend's lifetime (the gateway is a
+        # process-wide singleton via deps) — no connection setup per call.
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def complete(self, msgs: list[Msg], *, model: str | None = None) -> str:
         # `model` is accepted for a uniform backend interface but ignored: the
         # gateway resolves the shared `default` alias server-side and never
         # exposes per-request model choice (see apps/CLAUDE.md).
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                self.url,
-                headers=self.headers,
-                json={
-                    "model": self.model,
-                    "messages": _as_dicts(msgs),
-                    "stream": False,
-                },
-            )
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+        resp = await self._client.post(
+            self.url,
+            headers=self.headers,
+            json={
+                "model": self.model,
+                "messages": _as_dicts(msgs),
+                "stream": False,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"]
 
     async def stream(
         self, msgs: list[Msg], *, model: str | None = None, raw: bool = False
@@ -86,23 +88,22 @@ class GatewayChat:
         }
         if raw:
             payload["raw"] = True
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
-                "POST",
-                self.url,
-                headers=self.headers,
-                json=payload,
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line or not line.startswith("data:"):
-                        continue
-                    data = line[len("data:") :].strip()
-                    if data == "[DONE]":
-                        break
-                    delta = _sse_delta(data)
-                    if delta:
-                        yield delta
+        async with self._client.stream(
+            "POST",
+            self.url,
+            headers=self.headers,
+            json=payload,
+        ) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:") :].strip()
+                if data == "[DONE]":
+                    break
+                delta = _sse_delta(data)
+                if delta:
+                    yield delta
 
 
 class AnthropicChat:
@@ -185,7 +186,7 @@ class LLMGateway:
         self._fake = fake or FakeLLM()
         # fast/local tier = the centralized llm-app gateway
         self._fast = fast or (
-            GatewayChat(s.llm_base_url, s.llm_api_key, s.llm_model)
+            GatewayChat(s.llm_base_url, s.llm_api_key, s.llm_model, s.llm_timeout_s)
             if s.llm_base_url
             else None
         )

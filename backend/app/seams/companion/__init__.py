@@ -264,24 +264,35 @@ class Companion:
         # one node's grounding overlaps the next's drafting instead of running the
         # whole pipeline serially. Interrupts still swap only the *current* step
         # and leave the rest of the plan intact, matching the serial behaviour.
+        # Each item streams its events through a queue so the head card renders
+        # the moment its draft exists — grounding resolves behind it.
         width = max(1, self._s.companion_generate_concurrency)
         upcoming = iter(plan)
-        pending: deque[tuple[str, asyncio.Task]] = deque()
+        pending: deque[tuple[str, asyncio.Queue, asyncio.Task]] = deque()
         inflight: set[asyncio.Task] = set()
 
-        def _launch(title: str) -> asyncio.Task:
-            task = asyncio.create_task(
-                self._materialize(cid, title, message, user_id=owner)
-            )
+        def _launch(title: str) -> tuple[asyncio.Queue, asyncio.Task]:
+            q: asyncio.Queue = asyncio.Queue()
+
+            async def _run() -> Node:
+                try:
+                    node, _ = await self._materialize(
+                        cid, title, message, user_id=owner, sink=q.put_nowait
+                    )
+                    return node
+                finally:
+                    q.put_nowait(None)  # sentinel: no more events for this item
+
+            task = asyncio.create_task(_run())
             inflight.add(task)
-            return task
+            return q, task
 
         def _fill() -> None:
             while len(pending) < width:
                 nxt = next(upcoming, None)
                 if nxt is None:
                     return
-                pending.append((nxt, _launch(nxt)))
+                pending.append((nxt, *_launch(nxt)))
 
         prev_id: UUID | None = None
         produced = 0
@@ -294,9 +305,9 @@ class Companion:
                     if redirect:
                         # Swap just the head; its speculative draft is abandoned
                         # (cancelling rolls back any in-progress canonicalize).
-                        _old_title, old_task = pending.popleft()
+                        _old_title, _old_q, old_task = pending.popleft()
                         old_task.cancel()
-                        pending.appendleft((redirect, _launch(redirect)))
+                        pending.appendleft((redirect, *_launch(redirect)))
                         yield _ev("say", text=f"Sure — let's switch to {redirect}.")
                 elif barge and barge.get("type") == "answer":
                     await self._track(
@@ -306,12 +317,12 @@ class Companion:
                         {"text": barge.get("text", "")},
                     )
 
-                title, task = pending.popleft()
+                title, q, task = pending.popleft()
                 yield _ev("status", phase="step", detail=title)
-                node, events = await task
-                inflight.discard(task)
-                for e in events:
+                while (e := await q.get()) is not None:
                     yield e
+                node = await task
+                inflight.discard(task)
 
                 if prev_id is not None and prev_id != node.id:
                     edge = await self._content.add_edge(
@@ -633,19 +644,22 @@ class Companion:
         is echoed as a `discuss` event so the durable log replays both sides.
         """
         cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
-        owner = await self._library.checkout_owner(cid)
-        node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
-
-        # History before the echo, so the current message isn't double-counted.
-        history = await self._discussion_history(cid, nid)
+        # The pre-answer reads are independent — one round-trip's latency, not
+        # four, before the first spoken word. History is read before the echo,
+        # so the current message isn't double-counted.
+        owner, sub, history, ctx = await asyncio.gather(
+            self._library.checkout_owner(cid),
+            self._content.get_subgraph([nid], depth=0),
+            self._discussion_history(cid, nid),
+            self._learning.learner_context(cid, nid),
+        )
+        node = sub.nodes[0]
         yield _ev("discuss", node_id=str(nid), role="learner", text=message)
 
         # Personal context for the reply: discussion is uncached and one-to-one,
         # so it gets the full read — focal mastery band plus the learner's
         # weak/strong neighboring concepts.
-        learner = await self._learner_clause(
-            await self._learning.learner_context(cid, nid)
-        )
+        learner = await self._learner_clause(ctx)
 
         # 1) streamed answer — whole sentences so TTS reads naturally; pinned to
         #    the card via node_id (same path the deep-dive narration uses).
@@ -666,6 +680,9 @@ class Companion:
         answer = " ".join(parts)
 
         await self._track(cid, nid, "discussed", {"message": message})
+        # The answer is complete — release the learner's "thinking" cue now.
+        # Auto-accretion below is housekeeping; its cards stream in afterwards.
+        yield _ev("done")
 
         # 2) auto-accrete: did the exchange surface a genuinely new concept? If so,
         #    build it (reuse-or-generate+ground) and link it back to this card.
@@ -691,7 +708,6 @@ class Companion:
                     payload={"via": "discuss"},
                 )
             )
-        yield _ev("done")
 
     async def enrich(
         self, checkout_id: UUID, node_id: UUID
@@ -811,9 +827,14 @@ class Companion:
         subject: str,
         *,
         user_id: UUID | None = None,
+        sink=None,
     ) -> tuple[Node, list[StreamEvent]]:
-        """Return the resolved canonical node + the events to emit for it."""
+        """Resolve one concept: reuse, or generate -> optimistic render ->
+        ground -> canonicalize. Events flow to `sink` the moment they are
+        produced (so a live consumer renders the card before grounding
+        finishes); with no sink they accumulate and return as a list."""
         events: list[StreamEvent] = []
+        emit = sink or events.append
         # Reuse on an exact canonical-key hit (definitive) or a strong semantic
         # match. Exact-key mirrors the canonicalizer and is robust even though node
         # embeddings encode hook+body rather than the bare title.
@@ -823,8 +844,8 @@ class Companion:
             if hits and hits[0].score >= self._s.companion_reuse_threshold:
                 existing = hits[0].node
         if existing is not None:
-            events.append(_ev("say", text=existing.title))
-            events.append(
+            emit(_ev("say", text=existing.title))
+            emit(
                 _ev(
                     "node.create",
                     temp_id=str(existing.id),
@@ -834,16 +855,45 @@ class Companion:
             )
             return existing, events
 
-        # gap -> generate, ground, optimistic render, then canonicalize
+        # gap -> generate, render optimistically, then ground + canonicalize.
+        # The learner sees the drafted card immediately; grounding (the slow,
+        # search-injected local pass) resolves behind it and lands as the
+        # node.update — the reconciliation principle the stream already uses
+        # for canonical ids (specs/00 #6).
         candidate = await self._generator.generate(
             title, subject, checkout_id=checkout_id, user_id=user_id
         )
+        emit(_ev("say", text=title))
+        temp_id = str(uuid4())
+        emit(_ev("node.create", temp_id=temp_id, node=_candidate_payload(candidate)))
         candidate = await self._researcher.ground(
             candidate, checkout_id=checkout_id, user_id=user_id
         )
-        events.append(_ev("say", text=title))
-        node, persist_events = await self._persist_candidate(candidate)
-        events.extend(persist_events)
+        result = await self._ingestion.canonicalize(candidate)
+        node = result.node
+        flagged = node.confidence < self._s.companion_confidence_floor
+        emit(
+            _ev(
+                "node.update",
+                temp_id=temp_id,
+                canonical_id=str(node.id),
+                patch={
+                    "action": result.action,
+                    "origin": node.origin,
+                    "confidence": node.confidence,
+                    "locked": node.locked,
+                    "flagged_low_confidence": flagged,
+                },
+            )
+        )
+        if flagged:
+            emit(
+                _ev(
+                    "status",
+                    phase="flagged",
+                    detail=f"{node.title} is below the confidence floor",
+                )
+            )
         return node, events
 
     async def _track(
