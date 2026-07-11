@@ -60,6 +60,17 @@ async function fetchTts(text: string, signal: AbortSignal): Promise<Blob> {
   return res.blob();
 }
 
+/** One retry before giving a clip up — a dropped clip mid-narration reads as
+ *  "the voice started mid-sentence". Never retries a deliberate abort (barge-in). */
+async function fetchTtsWithRetry(text: string, signal: AbortSignal): Promise<Blob | null> {
+  try {
+    return await fetchTts(text, signal);
+  } catch {
+    if (signal.aborted) return null;
+    return fetchTts(text, signal).catch(() => null);
+  }
+}
+
 /** Queue `text` to be spoken after anything already speaking. Best-effort.
  *  The TTS fetch starts immediately so synthesis overlaps the previous clip's
  *  playback — only *playback* is serialized. Without the prefetch, every
@@ -72,7 +83,7 @@ export function speak(text: string): void {
   setSpeaking(true);
   const controller = new AbortController();
   inflight.add(controller);
-  const fetched = fetchTts(value, controller.signal).catch(() => null);
+  const fetched = fetchTtsWithRetry(value, controller.signal);
   chain = chain.then(async () => {
     let url: string | null = null;
     try {

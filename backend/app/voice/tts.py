@@ -72,6 +72,11 @@ class TtsEngine:
             self._fetched = True
             return onnx, conf
 
+    def warm(self) -> None:
+        """Fetch the voice model so the first request doesn't pay the download.
+        Blocking — call from a background thread."""
+        self._ensure_model()
+
     def synthesize(self, text: str) -> bytes:
         """Render `text` to WAV bytes. Blocking — run in a threadpool."""
         text = (text or "").strip()

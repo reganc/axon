@@ -44,6 +44,11 @@ class KokoroEngine:
     def __init__(self, settings: Settings | None = None) -> None:
         self._s = settings or get_settings()
         self._lock = threading.Lock()
+        # kokoro-onnx shares one onnxruntime InferenceSession; concurrent
+        # create() calls on it garble/truncate clips (the frontend prefetches
+        # every sentence in parallel, so bursts are the norm). Serialize
+        # synthesis — clips queue server-side, prefetch still overlaps playback.
+        self._synth_lock = threading.Lock()
         self._kokoro = None
 
     @property
@@ -67,9 +72,7 @@ class KokoroEngine:
                 if path.exists() and path.stat().st_size > 0:
                     continue
                 log.info("downloading Kokoro asset %s", url)
-                with httpx.stream(
-                    "GET", url, follow_redirects=True, timeout=600
-                ) as r:
+                with httpx.stream("GET", url, follow_redirects=True, timeout=600) as r:
                     r.raise_for_status()
                     tmp = path.with_suffix(path.suffix + ".part")
                     with tmp.open("wb") as fh:
@@ -87,10 +90,17 @@ class KokoroEngine:
         if not text:
             raise ValueError("empty text")
         kokoro = self._ensure()
-        samples, sample_rate = kokoro.create(
-            text,
-            voice=self._s.kokoro_voice,
-            speed=self._s.kokoro_speed,
-            lang=self._s.kokoro_lang,
-        )
+        with self._synth_lock:
+            samples, sample_rate = kokoro.create(
+                text,
+                voice=self._s.kokoro_voice,
+                speed=self._s.kokoro_speed,
+                lang=self._s.kokoro_lang,
+            )
         return _wav_bytes(samples, sample_rate)
+
+    def warm(self) -> None:
+        """Load the model and run one tiny synthesis so the first real request
+        doesn't pay the cold start (~310MB download + session init). Blocking —
+        call from a background thread."""
+        self.synthesize("Ready.")

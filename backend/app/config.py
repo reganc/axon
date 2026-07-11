@@ -128,6 +128,9 @@ class Settings(BaseSettings):
     # model on the host GPU; flip stt_device="cuda" if you have headroom.
     voice_enabled: bool = True
     voice_model_dir: str = "/models/voice"
+    # Warm the TTS engine in a background thread at startup so the first spoken
+    # sentence never pays the cold model load (Kokoro: ~310MB + session init).
+    tts_warm_on_start: bool = True
     tts_engine: str = "kokoro"  # "kokoro" (natural prosody) | "piper" (fallback)
     # Kokoro (the default Jarvis voice): kokoro-onnx on CPU, British male.
     kokoro_voice: str = "bm_george"  # bm_lewis is the alternative
