@@ -131,7 +131,7 @@ export type ClientMessage =
   | { type: "answer"; text: string }
   | { type: "pull_thread"; node_id: string }
   | { type: "explore_question"; node_id: string }
-  | { type: "explain"; node_id: string }
+  | { type: "explain"; node_id: string; depth?: number }
   | { type: "discuss"; node_id: string; text: string }
   | { type: "set_level"; level: DeliveryLevel | null }
   | { type: "request_media"; node_id: string }

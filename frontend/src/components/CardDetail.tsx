@@ -6,12 +6,17 @@ import { type GNode, useGraphStore } from "@/store/graphStore";
 import { useTranscriptStore } from "@/store/transcriptStore";
 import { MediaPanel } from "./MediaPanel";
 
+// Mirrors the backend clamp (AXON_COMPANION_MAX_DIVE_DEPTH); the button hides
+// once the ladder tops out.
+const MAX_DIVE_DEPTH = 3;
+
 interface Props {
   nodeId: string;
   onClose: () => void;
   onExplore: (node: GNode) => void;
-  /** Start a streamed, spoken deep-dive on this card. */
-  onDeepDive: (nodeId: string) => void;
+  /** Start a streamed, spoken deep-dive on this card. depth>0 asks for a
+   *  genuinely deeper pass (the go-deeper ladder). */
+  onDeepDive: (nodeId: string, depth?: number) => void;
   /** Ask a node-scoped follow-up — keeps the conversation on this card. */
   onDiscuss: (nodeId: string, text: string) => void;
   /** Pull up visual aids (video, diagram, links, mini-graph) for this card. */
@@ -42,6 +47,10 @@ export function CardDetail({
   const requested = useRef<Set<string>>(new Set());
   const mediaRequested = useRef<Set<string>>(new Set());
   const threadEndRef = useRef<HTMLDivElement>(null);
+  // Go-deeper ladder: how many deeper passes this card has been asked for
+  // (per node, survives switching cards within the open reader).
+  const depths = useRef<Record<string, number>>({});
+  const [deepening, setDeepening] = useState(false);
 
   useEffect(() => setRevealed(false), [nodeId]);
   useEffect(() => {
@@ -74,8 +83,20 @@ export function CardDetail({
     threadEndRef.current?.scrollIntoView({ block: "nearest" });
   }, [thread]);
 
+  // The deeper pass has landed once the turn finishes.
+  useEffect(() => {
+    if (!busy) setDeepening(false);
+  }, [busy]);
+
   if (!node) return null;
   const diving = busy && !deepDive;
+  const depth = depths.current[nodeId] ?? 0;
+  const goDeeper = () => {
+    const next = Math.min(depth + 1, MAX_DIVE_DEPTH);
+    depths.current[nodeId] = next;
+    setDeepening(true);
+    onDeepDive(nodeId, next);
+  };
   const awaitingReply =
     busy && thread !== undefined && thread.length > 0 && thread[thread.length - 1].role === "learner";
 
@@ -129,6 +150,21 @@ export function CardDetail({
             )}
             {deepDive && (
               <p className="whitespace-pre-wrap leading-relaxed text-fg">{deepDive}</p>
+            )}
+            {deepening && (
+              <p className="mt-2 animate-pulse text-sm italic text-muted">
+                Jarvis is digging deeper…
+              </p>
+            )}
+            {deepDive && !busy && depth < MAX_DIVE_DEPTH && (
+              <button
+                type="button"
+                onClick={goDeeper}
+                disabled={node.optimistic}
+                className="mt-3 self-start rounded-full border border-accent px-4 py-1.5 text-sm font-medium text-accent hover:bg-accent hover:text-accent-fg disabled:opacity-40"
+              >
+                Go deeper
+              </button>
             )}
             {node.body &&
               (revealed ? (

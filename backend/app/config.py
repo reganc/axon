@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     # reason tier -> Anthropic API (off-box, opt-in via key)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
+    # Output cap per Anthropic call. 1024 visibly truncates deep-dives; 2048
+    # covers a rich spoken explanation without inviting runaway spend.
+    anthropic_max_tokens: int = 2048
 
     # canonicalization thresholds (tune empirically once generation flows)
     canon_merge_threshold: float = 0.92
@@ -85,6 +88,9 @@ class Settings(BaseSettings):
     )
     companion_generate_concurrency: int = (
         3  # nodes materialized in parallel per turn (generate ∥ ground pipeline)
+    )
+    companion_max_dive_depth: int = (
+        3  # go-deeper ladder rungs beyond the first pass (each is a reason call)
     )
     librarian_merge_threshold: float = (
         0.93  # background dedup of near-duplicate AI nodes

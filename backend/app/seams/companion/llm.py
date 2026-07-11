@@ -192,7 +192,9 @@ class LLMGateway:
         if anthropic_chat is not None:
             self._anthropic = anthropic_chat
         elif s.anthropic_api_key and s.anthropic_model:
-            self._anthropic = AnthropicChat(s.anthropic_api_key, s.anthropic_model)
+            self._anthropic = AnthropicChat(
+                s.anthropic_api_key, s.anthropic_model, s.anthropic_max_tokens
+            )
         else:
             self._anthropic = None
 
@@ -267,21 +269,42 @@ class LLMGateway:
         return result
 
     async def stream(
-        self, msgs: list[Msg], tier: Tier, *, raw: bool = False
+        self,
+        msgs: list[Msg],
+        tier: Tier,
+        *,
+        raw: bool = False,
+        task: "TaskKind | None" = None,
+        checkout_id=None,
+        user_id=None,
     ) -> AsyncIterator[str]:
-        # The streaming path (narration / deep-dive explanations) has no task
-        # router, so honor fast_tier here: when "cloud", stream the fast tier from
-        # the cheap model instead of the slow local gateway.
         backend = self._backend(tier)
         model: str | None = None
-        if (
+        routed = None
+        if task is not None and self._controller is not None:
+            # Task-routed stream (e.g. deep_dive -> the reasoning model), budget
+            # gated and metered like any other cloud call. When the router
+            # degrades to local (over budget) or no cloud backend exists, the
+            # stream falls through to the fast lane unmetered.
+            routed = await self._controller.route(
+                task, user_id=user_id, checkout_id=checkout_id
+            )
+            if routed.tier == "cloud" and self._anthropic is not None:
+                backend, model = self._anthropic, routed.model
+            else:
+                routed = None
+        elif (
             tier == "fast"
             and self._s.fast_tier == "cloud"
             and self._anthropic is not None
         ):
+            # No task named: honor fast_tier so narration streams from the cheap
+            # cloud model instead of the slow local gateway.
             backend, model = self._anthropic, self._s.model_cheap
+        out_chars = 0
         try:
             async for chunk in backend.stream(msgs, model=model, raw=raw):
+                out_chars += len(chunk)
                 yield chunk
         except Exception as exc:  # noqa: BLE001
             log.warning(
@@ -289,6 +312,17 @@ class LLMGateway:
             )
             async for chunk in self._fake.stream(msgs):
                 yield chunk
+        if routed is not None:
+            await self._controller.record(
+                task=task,
+                role=self._role,
+                routed=routed,
+                input_tokens=sum(estimate_tokens(m.content) for m in msgs),
+                cached_input_tokens=0,
+                output_tokens=max(1, out_chars // 4),
+                checkout_id=checkout_id,
+                user_id=user_id,
+            )
 
     async def embed(self, text: str) -> list[float]:
         return await self._embedder.embed(text)

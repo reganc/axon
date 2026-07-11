@@ -288,8 +288,17 @@ class LLMPort(Protocol):
     # routes fast -> Ollama (local, RTX 3060), reason -> Anthropic API
     # raw=True opts a gateway stream out of web-search/RAG injection (talk
     # streams whose content is already grounded — much faster to first token).
+    # A named `task` routes the stream through the cost controller (budget
+    # gated + metered), e.g. task="deep_dive" -> the reasoning model.
     def stream(
-        self, msgs: list[Msg], tier: Tier, *, raw: bool = False
+        self,
+        msgs: list[Msg],
+        tier: Tier,
+        *,
+        raw: bool = False,
+        task: str | None = None,
+        checkout_id: UUID | None = None,
+        user_id: UUID | None = None,
     ) -> AsyncIterator[str]: ...
     async def complete(self, msgs: list[Msg], tier: Tier) -> str: ...
     async def embed(self, text: str) -> list[float]: ...  # 768-dim
@@ -304,7 +313,11 @@ class CompanionPort(Protocol):
         self, checkout_id: UUID, node_id: UUID
     ) -> AsyncIterator[StreamEvent]: ...
     def explain_node(
-        self, checkout_id: UUID, node_id: UUID, level: str | None = None
+        self,
+        checkout_id: UUID,
+        node_id: UUID,
+        level: str | None = None,
+        depth: int = 0,
     ) -> AsyncIterator[StreamEvent]: ...
     def discuss(
         self, checkout_id: UUID, node_id: UUID, message: str, level: str | None = None

@@ -86,6 +86,14 @@ def _flush_sentences(buf: str) -> tuple[str, list[str]]:
     return buf[last:], out
 
 
+def _speakable_sentences(text: str) -> list[str]:
+    """Split a complete text into sanitized sentences for narration (the
+    non-streaming counterpart of _flush_sentences — the tail is kept)."""
+    rest, sentences = _flush_sentences(text)
+    tail = _sanitize(rest).strip()
+    return [*sentences, tail] if tail else sentences
+
+
 def _ev(type_: str, **data) -> StreamEvent:
     return StreamEvent(type=type_, data=data)
 
@@ -413,36 +421,56 @@ class Companion:
         yield _ev("done", nodes=produced)
 
     async def explain_node(
-        self, checkout_id: UUID, node_id: UUID, level: str | None = None
+        self,
+        checkout_id: UUID,
+        node_id: UUID,
+        level: str | None = None,
+        depth: int = 0,
     ) -> AsyncIterator[StreamEvent]:
-        """Deep-dive on an existing card: stream a conversational explanation of
-        the node itself (ephemeral talk), then — for concept cards only —
-        generate study materials that persist into the library (a key-points
-        summary, an analogy, follow-ups). Derived cards (artifacts, rabbit-hole
-        'deeper look' nodes) are terminal: explained in place, never mined again.
+        """Deep-dive on an existing card: read the card itself (hook + notes),
+        stream a conversational explanation beyond it (ephemeral talk), then —
+        for concept cards only — generate study materials that persist into the
+        library (a key-points summary, an analogy, follow-ups). Derived cards
+        (artifacts, rabbit-hole 'deeper look' nodes) are terminal: explained in
+        place, never mined again.
+
+        `depth` is the go-deeper ladder: 0 is the first pass; each increment
+        generates a genuinely deeper pass (routed to the reasoning model,
+        given the prior narration and graph neighbors, cached per rung).
 
         `say` events for the explanation carry `node_id` so the frontend can pin
         the narration to the card that was opened.
         """
         cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
-        owner = await self._library.checkout_owner(cid)
-        node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
-        yield _ev("status", phase="explaining", detail=node.title)
+        depth = max(0, min(int(depth or 0), self._s.companion_max_dive_depth))
+        owner, sub, ctx = await asyncio.gather(
+            self._library.checkout_owner(cid),
+            self._content.get_subgraph([nid], depth=1),
+            self._learning.learner_context(cid, nid),
+        )
+        node = next(n for n in sub.nodes if n.id == nid)
+        neighbor_titles = tuple(n.title for n in sub.nodes if n.id != nid)[:8]
+        yield _ev(
+            "status",
+            phase="explaining",
+            detail=node.title if depth == 0 else f"digging deeper: {node.title}",
+        )
 
         # How well does this learner know this card already? The coarse band
         # shapes the talk (and keys the cache) — shaky learners get first
         # principles, strong ones get depth.
-        ctx = await self._learning.learner_context(cid, nid)
         band = _mastery_band(ctx.focus_mastery, ctx.focus_confusions)
 
         # Cache check: a dive for this exact node content + level + mastery band
-        # may already exist (this or any other session). A hit narrates
-        # instantly and replays the material cards from the DB — zero LLM calls.
+        # + depth rung may already exist (this or any other session). A hit
+        # narrates instantly and replays the material cards from the DB — zero
+        # LLM calls.
         key = cache.dive_key(
             nid,
             level,
             f"{node.title}\n{node.hook or ''}\n{node.body or ''}",
             band=band,
+            depth=depth,
         )
         hit = await self._dive_cache.get(key) if self._dive_cache else None
         if hit is not None:
@@ -450,13 +478,39 @@ class Companion:
                 yield ev
             return
 
-        # 1) streamed explanation — flush whole sentences so TTS reads naturally.
+        # 1) the card itself first — hook, then the notes — but only on the
+        #    first pass. The learner opened this card to hear *it*; the
+        #    generated elaboration below builds beyond the notes instead of
+        #    replacing them. Included in `spoken` so cached replays read the
+        #    card too. Deeper rungs skip straight to new material.
+        spoken: list[str] = []
+        if depth == 0:
+            for text in (node.hook, node.body):
+                for s in _speakable_sentences(text or ""):
+                    spoken.append(s)
+                    yield _ev("say", text=s, node_id=str(nid))
+
+        # What was already said about this card (earlier rungs + discussion),
+        # so a deeper pass advances instead of repeating. From the durable log,
+        # capped so the prompt stays bounded.
+        prior = ""
+        if depth > 0:
+            turns = await self._discussion_history(cid, nid)
+            prior = " ".join(t["text"] for t in turns if t["role"] == "tutor")[-1500:]
+
+        # 2) streamed explanation — flush whole sentences so TTS reads naturally.
         #    `level` shapes only this ephemeral talk; the study materials below
         #    persist at the canonical register regardless of the learner's level.
         buf = ""
-        spoken: list[str] = []
         async for chunk in self._elaborator.explain(
-            node, level=level, learner_clause=_band_clause(band)
+            node,
+            level=level,
+            learner_clause=_band_clause(band),
+            depth=depth,
+            neighbor_titles=neighbor_titles,
+            prior=prior,
+            checkout_id=cid,
+            user_id=owner,
         ):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
@@ -467,6 +521,17 @@ class Companion:
         if tail:
             spoken.append(tail)
             yield _ev("say", text=tail, node_id=str(nid))
+
+        # Deeper rungs are talk only: the study materials already exist from the
+        # first pass — regenerating them would only duplicate.
+        if depth > 0:
+            await self._track(cid, nid, "deep_dive")
+            if self._dive_cache:
+                await self._dive_cache.put(
+                    key, {"sentences": spoken, "materials": [], "edges": []}
+                )
+            yield _ev("done", nodes=0)
+            return
 
         # Derived cards are leaves: a study artifact (Key points / Analogy) or a
         # rabbit-hole "deeper look" node. Explaining one in place is the whole
@@ -482,7 +547,7 @@ class Companion:
             yield _ev("done", nodes=0)
             return
 
-        # 2) study materials -> persist through the canonicalize chokepoint, each
+        # 3) study materials -> persist through the canonicalize chokepoint, each
         # linked back to the source node so they replay and grow the graph.
         yield _ev("status", phase="materials", detail="capturing key points…")
         materials = await self._elaborator.materials(

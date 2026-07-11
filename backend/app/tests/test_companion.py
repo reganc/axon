@@ -197,6 +197,28 @@ async def test_explain_node_streams_and_persists_materials(seeded, seams):
     assert summary is not None and summary.kind == "artifact"
 
 
+async def test_explain_node_narrates_the_card_itself_first(seeded, seams):
+    """Opening a card reads the card: its hook and notes are spoken before the
+    generated elaboration, so the detail is always narrated even when the
+    model's paraphrase is thin."""
+    from app.seams.companion import _speakable_sentences
+
+    comp = make_companion(seams, plan=[])
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "narrate the card")
+
+    events = [e async for e in comp.explain_node(checkout.id, node.id)]
+    says = [e.data["text"] for e in events if e.type == "say"]
+
+    expected = [
+        *_speakable_sentences(node.hook or ""),
+        *_speakable_sentences(node.body or ""),
+    ]
+    assert expected, "seed card should have a hook/body to narrate"
+    assert says[: len(expected)] == expected
+    assert len(says) > len(expected)  # the elaboration still follows
+
+
 async def test_explain_node_reopen_serves_from_cache(seeded, seams):
     """A second dive on the same card replays from the cache: identical
     narration, material cards re-surfaced as reuse events, and nothing
@@ -227,6 +249,44 @@ async def test_explain_node_reopen_serves_from_cache(seeded, seams):
     assert any(e.type == "edge.create" for e in second)
     assert not any(e.type == "node.update" for e in second)  # no canonicalize ran
     assert second[-1].type == "done"
+
+
+async def test_go_deeper_is_a_new_pass_not_a_replay(seeded, seams):
+    """depth keys the dive cache: asking to dig deeper streams a fresh pass
+    instead of replaying the first one, skips the card-intro narration, and
+    accretes no duplicate study materials."""
+    from app.seams.companion.cache import MemoryDiveCache
+
+    dive_cache = MemoryDiveCache()
+    comp = make_companion(seams, plan=[], dive_cache=dive_cache)
+    node = await seams.content.get_node_by_key("the-convolutional-network")
+    checkout = await _free_checkout(seams, "go deeper")
+
+    first = [e async for e in comp.explain_node(checkout.id, node.id)]
+    before = await scalar("SELECT count(*) FROM canonical_nodes")
+    deeper = [e async for e in comp.explain_node(checkout.id, node.id, depth=1)]
+    after = await scalar("SELECT count(*) FROM canonical_nodes")
+
+    # separate cache rungs — a reopen at depth 0 still hits, depth 1 is its own
+    assert len(dive_cache.store) == 2
+    assert any(":d0:" in k for k in dive_cache.store)
+    assert any(":d1:" in k for k in dive_cache.store)
+
+    # the deeper pass streamed fresh narration, not the first pass replayed
+    first_says = [e.data["text"] for e in first if e.type == "say"]
+    deeper_says = [e.data["text"] for e in deeper if e.type == "say"]
+    assert deeper_says
+    assert deeper_says != first_says
+    # and it doesn't re-read the hook/notes intro
+    from app.seams.companion import _speakable_sentences
+
+    intro = _speakable_sentences(node.hook or "")
+    assert intro and deeper_says[0] != intro[0]
+
+    # talk only: no duplicate materials persisted on deeper rungs
+    assert after == before
+    assert not any(e.type == "node.update" for e in deeper)
+    assert deeper[-1].type == "done" and deeper[-1].data["nodes"] == 0
 
 
 async def test_dive_cache_is_level_scoped(seeded, seams):
