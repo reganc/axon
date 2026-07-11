@@ -190,3 +190,60 @@ def test_kokoro_synthesize_renders_wav(monkeypatch):
         assert w.getsampwidth() == 2
         assert w.getframerate() == 24000
         assert w.getnframes() == 5
+
+
+def test_kokoro_synthesis_is_serialized(monkeypatch):
+    """Concurrent synthesize() calls must never overlap inside kokoro.create —
+    the shared onnxruntime session garbles clips under concurrency (heard as
+    narration starting mid-sentence). The frontend prefetches every sentence in
+    parallel, so bursts are the norm, not the exception."""
+    import threading
+    import time
+
+    from app.voice.kokoro import KokoroEngine
+
+    active = 0
+    max_active = 0
+    guard = threading.Lock()
+
+    class _SlowKokoro:
+        def create(self, text, voice, speed, lang):
+            nonlocal active, max_active
+            with guard:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.02)
+            with guard:
+                active -= 1
+            return [0.0, 0.1], 24000
+
+    engine = KokoroEngine()
+    monkeypatch.setattr(engine, "_ensure", lambda: _SlowKokoro())
+
+    threads = [
+        threading.Thread(target=engine.synthesize, args=(f"clip {i}.",))
+        for i in range(6)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert max_active == 1
+
+
+def test_kokoro_warm_runs_one_synthesis(monkeypatch):
+    """warm() loads the model and renders one clip so the first real request
+    never pays the cold start."""
+    from app.voice.kokoro import KokoroEngine
+
+    calls = []
+
+    class _FakeKokoro:
+        def create(self, text, voice, speed, lang):
+            calls.append(text)
+            return [0.0], 24000
+
+    engine = KokoroEngine()
+    monkeypatch.setattr(engine, "_ensure", lambda: _FakeKokoro())
+    engine.warm()
+    assert len(calls) == 1

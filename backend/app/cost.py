@@ -45,6 +45,7 @@ TaskKind = Literal[
     "plan",
     "merge_judgment",
     "ground",  # reasoning cloud
+    "deep_dive",  # depth>0 explanations — the strong reasoning model
 ]
 
 Tier = Literal["local", "cloud"]
@@ -78,6 +79,9 @@ _CLOUD_TASKS: dict[str, tuple[str, bool]] = {
     "plan": ("model_cheap", False),
     "ground": ("model_ground", True),
     "merge_judgment": ("model_reason", False),
+    # A learner explicitly asking to go deeper is the one talk path where model
+    # quality is the product — the cheap tiers' ceiling is what "shallow" means.
+    "deep_dive": ("model_reason", False),
 }
 
 # Representative $/Mtok (input, output) — mid-2026 order of magnitude; the policy

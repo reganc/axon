@@ -7,7 +7,7 @@ checkout belongs to the caller, then runs a bidirectional loop:
   client -> server : {type: subject|start, text}      start/continue a turn
                      {type: interrupt|answer, text}    barge-in (re-enters Tutor)
                      {type: pull_thread, node_id}      spawn a rabbit-hole
-                     {type: explain, node_id}          deep-dive a selected card
+                     {type: explain, node_id, depth?}  deep-dive a card (depth>0 = go deeper)
                      {type: discuss, node_id, text}    node-scoped follow-up chat
                      {type: set_level, level}          pitch talk to a learner level
                      {type: request_media, node_id}    visual aids for a card
@@ -110,10 +110,15 @@ async def companion_ws(ws: WebSocket, checkout_id: UUID):
             elif kind == "explain":
                 # Deep-dive on a selected card. Runs as a cancellable task so the
                 # receive loop keeps reading — opening another card supersedes it.
+                # `depth` > 0 is the go-deeper ladder (companion clamps it).
                 if aux and not aux.done():
                     aux.cancel()
                 aux = asyncio.create_task(
-                    stream(companion().explain_node(cid, msg.get("node_id"), level))
+                    stream(
+                        companion().explain_node(
+                            cid, msg.get("node_id"), level, msg.get("depth", 0)
+                        )
+                    )
                 )
             elif kind == "discuss":
                 # A node-scoped follow-up. Shares the cancellable aux slot with the

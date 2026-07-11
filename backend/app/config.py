@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://host.docker.internal:8030/v1"
     llm_api_key: str = ""  # Bearer token for the gateway (set in .env)
     llm_model: str = "default"  # gateway resolves the alias to the active model
+    # Per-call ceiling for the local gateway. A local draft with search
+    # injection legitimately runs ~40s; beyond ~90s the host is wedged and the
+    # turn should degrade to the FakeLLM instead of hanging.
+    llm_timeout_s: float = 90.0
     # embeddings -> the same box's Ollama (the gateway has no embeddings endpoint)
     ollama_base_url: str = "http://host.docker.internal:11434"
     ollama_embed_model: str = "nomic-embed-text"  # 768-dim
@@ -64,6 +68,9 @@ class Settings(BaseSettings):
     # reason tier -> Anthropic API (off-box, opt-in via key)
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
+    # Output cap per Anthropic call. 1024 visibly truncates deep-dives; 2048
+    # covers a rich spoken explanation without inviting runaway spend.
+    anthropic_max_tokens: int = 2048
 
     # canonicalization thresholds (tune empirically once generation flows)
     canon_merge_threshold: float = 0.92
@@ -85,6 +92,9 @@ class Settings(BaseSettings):
     )
     companion_generate_concurrency: int = (
         3  # nodes materialized in parallel per turn (generate ∥ ground pipeline)
+    )
+    companion_max_dive_depth: int = (
+        3  # go-deeper ladder rungs beyond the first pass (each is a reason call)
     )
     librarian_merge_threshold: float = (
         0.93  # background dedup of near-duplicate AI nodes
@@ -128,6 +138,9 @@ class Settings(BaseSettings):
     # model on the host GPU; flip stt_device="cuda" if you have headroom.
     voice_enabled: bool = True
     voice_model_dir: str = "/models/voice"
+    # Warm the TTS engine in a background thread at startup so the first spoken
+    # sentence never pays the cold model load (Kokoro: ~310MB + session init).
+    tts_warm_on_start: bool = True
     tts_engine: str = "kokoro"  # "kokoro" (natural prosody) | "piper" (fallback)
     # Kokoro (the default Jarvis voice): kokoro-onnx on CPU, British male.
     kokoro_voice: str = "bm_george"  # bm_lewis is the alternative

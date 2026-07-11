@@ -183,30 +183,68 @@ class Elaborator:
         self._s = settings or get_settings()
 
     def explain(
-        self, node: Node, level: str | None = None, learner_clause: str = ""
+        self,
+        node: Node,
+        level: str | None = None,
+        learner_clause: str = "",
+        *,
+        depth: int = 0,
+        neighbor_titles: tuple[str, ...] = (),
+        prior: str = "",
+        checkout_id=None,
+        user_id=None,
     ) -> AsyncIterator[str]:
+        """Stream a spoken explanation. depth=0 is the first pass (fast tier,
+        raw — the node is already grounded). depth>0 is an explicit "go deeper"
+        request: routed as a `deep_dive` task (the reasoning model, budget
+        gated), given the prior narration so it advances instead of repeating,
+        and — if degraded to the local lane — allowed the search injection,
+        because going beyond the card needs evidence the card doesn't hold."""
+        system = (
+            "You are AXON's Tutor speaking aloud to one learner. Explain the "
+            "concept conversationally and in depth — intuition first, then a "
+            "concrete example, then why it matters. Flowing spoken prose, no "
+            "markdown, no headings, no lists, no citations."
+        )
+        if depth > 0:
+            system += (
+                " The learner has already heard an explanation and explicitly "
+                "asked to go deeper. Advance strictly beyond what was said: "
+                "mechanisms, quantitative detail, edge cases, common "
+                "misconceptions, open questions. Never repeat or summarize the "
+                "earlier explanation."
+            )
+        neighbors_line = (
+            f"Related concepts in their graph: {', '.join(neighbor_titles)}\n"
+            if neighbor_titles
+            else ""
+        )
+        prior_block = f"Already said (do not repeat):\n{prior}\n" if prior else ""
+        closing = (
+            "Go one level deeper than everything above."
+            if depth > 0
+            else (
+                "The hook and notes above were just read aloud to the "
+                "learner — do not restate them. Build outward from them: "
+                "teach it richly, as if thinking out loud with the learner."
+            )
+        )
         msgs = [
-            Msg(
-                role="system",
-                content=(
-                    "You are AXON's Tutor speaking aloud to one learner. Explain the "
-                    "concept conversationally and in depth — intuition first, then a "
-                    "concrete example, then why it matters. Flowing spoken prose, no "
-                    "markdown, no headings, no lists, no citations."
-                    + level_clause(level)
-                    + learner_clause
-                ),
-            ),
+            Msg(role="system", content=system + level_clause(level) + learner_clause),
             Msg(
                 role="user",
                 content=(
                     f"TASK: explain\nConcept: {node.title}\n"
                     f"Existing hook: {node.hook or ''}\n"
                     f"Existing notes: {node.body or ''}\n"
-                    "Teach it richly, as if thinking out loud with the learner."
+                    f"{neighbors_line}{prior_block}{closing}"
                 ),
             ),
         ]
+        if depth > 0:
+            return self._llm.stream(
+                msgs, "fast", task="deep_dive", checkout_id=checkout_id, user_id=user_id
+            )
         # raw: the node is already grounded — skip the gateway's search/RAG
         # injection (~13s of dead air before the first word, plus citation
         # markers the narrator would have to scrub).

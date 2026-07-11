@@ -86,6 +86,14 @@ def _flush_sentences(buf: str) -> tuple[str, list[str]]:
     return buf[last:], out
 
 
+def _speakable_sentences(text: str) -> list[str]:
+    """Split a complete text into sanitized sentences for narration (the
+    non-streaming counterpart of _flush_sentences — the tail is kept)."""
+    rest, sentences = _flush_sentences(text)
+    tail = _sanitize(rest).strip()
+    return [*sentences, tail] if tail else sentences
+
+
 def _ev(type_: str, **data) -> StreamEvent:
     return StreamEvent(type=type_, data=data)
 
@@ -256,24 +264,35 @@ class Companion:
         # one node's grounding overlaps the next's drafting instead of running the
         # whole pipeline serially. Interrupts still swap only the *current* step
         # and leave the rest of the plan intact, matching the serial behaviour.
+        # Each item streams its events through a queue so the head card renders
+        # the moment its draft exists — grounding resolves behind it.
         width = max(1, self._s.companion_generate_concurrency)
         upcoming = iter(plan)
-        pending: deque[tuple[str, asyncio.Task]] = deque()
+        pending: deque[tuple[str, asyncio.Queue, asyncio.Task]] = deque()
         inflight: set[asyncio.Task] = set()
 
-        def _launch(title: str) -> asyncio.Task:
-            task = asyncio.create_task(
-                self._materialize(cid, title, message, user_id=owner)
-            )
+        def _launch(title: str) -> tuple[asyncio.Queue, asyncio.Task]:
+            q: asyncio.Queue = asyncio.Queue()
+
+            async def _run() -> Node:
+                try:
+                    node, _ = await self._materialize(
+                        cid, title, message, user_id=owner, sink=q.put_nowait
+                    )
+                    return node
+                finally:
+                    q.put_nowait(None)  # sentinel: no more events for this item
+
+            task = asyncio.create_task(_run())
             inflight.add(task)
-            return task
+            return q, task
 
         def _fill() -> None:
             while len(pending) < width:
                 nxt = next(upcoming, None)
                 if nxt is None:
                     return
-                pending.append((nxt, _launch(nxt)))
+                pending.append((nxt, *_launch(nxt)))
 
         prev_id: UUID | None = None
         produced = 0
@@ -286,9 +305,9 @@ class Companion:
                     if redirect:
                         # Swap just the head; its speculative draft is abandoned
                         # (cancelling rolls back any in-progress canonicalize).
-                        _old_title, old_task = pending.popleft()
+                        _old_title, _old_q, old_task = pending.popleft()
                         old_task.cancel()
-                        pending.appendleft((redirect, _launch(redirect)))
+                        pending.appendleft((redirect, *_launch(redirect)))
                         yield _ev("say", text=f"Sure — let's switch to {redirect}.")
                 elif barge and barge.get("type") == "answer":
                     await self._track(
@@ -298,12 +317,12 @@ class Companion:
                         {"text": barge.get("text", "")},
                     )
 
-                title, task = pending.popleft()
+                title, q, task = pending.popleft()
                 yield _ev("status", phase="step", detail=title)
-                node, events = await task
-                inflight.discard(task)
-                for e in events:
+                while (e := await q.get()) is not None:
                     yield e
+                node = await task
+                inflight.discard(task)
 
                 if prev_id is not None and prev_id != node.id:
                     edge = await self._content.add_edge(
@@ -413,36 +432,56 @@ class Companion:
         yield _ev("done", nodes=produced)
 
     async def explain_node(
-        self, checkout_id: UUID, node_id: UUID, level: str | None = None
+        self,
+        checkout_id: UUID,
+        node_id: UUID,
+        level: str | None = None,
+        depth: int = 0,
     ) -> AsyncIterator[StreamEvent]:
-        """Deep-dive on an existing card: stream a conversational explanation of
-        the node itself (ephemeral talk), then — for concept cards only —
-        generate study materials that persist into the library (a key-points
-        summary, an analogy, follow-ups). Derived cards (artifacts, rabbit-hole
-        'deeper look' nodes) are terminal: explained in place, never mined again.
+        """Deep-dive on an existing card: read the card itself (hook + notes),
+        stream a conversational explanation beyond it (ephemeral talk), then —
+        for concept cards only — generate study materials that persist into the
+        library (a key-points summary, an analogy, follow-ups). Derived cards
+        (artifacts, rabbit-hole 'deeper look' nodes) are terminal: explained in
+        place, never mined again.
+
+        `depth` is the go-deeper ladder: 0 is the first pass; each increment
+        generates a genuinely deeper pass (routed to the reasoning model,
+        given the prior narration and graph neighbors, cached per rung).
 
         `say` events for the explanation carry `node_id` so the frontend can pin
         the narration to the card that was opened.
         """
         cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
-        owner = await self._library.checkout_owner(cid)
-        node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
-        yield _ev("status", phase="explaining", detail=node.title)
+        depth = max(0, min(int(depth or 0), self._s.companion_max_dive_depth))
+        owner, sub, ctx = await asyncio.gather(
+            self._library.checkout_owner(cid),
+            self._content.get_subgraph([nid], depth=1),
+            self._learning.learner_context(cid, nid),
+        )
+        node = next(n for n in sub.nodes if n.id == nid)
+        neighbor_titles = tuple(n.title for n in sub.nodes if n.id != nid)[:8]
+        yield _ev(
+            "status",
+            phase="explaining",
+            detail=node.title if depth == 0 else f"digging deeper: {node.title}",
+        )
 
         # How well does this learner know this card already? The coarse band
         # shapes the talk (and keys the cache) — shaky learners get first
         # principles, strong ones get depth.
-        ctx = await self._learning.learner_context(cid, nid)
         band = _mastery_band(ctx.focus_mastery, ctx.focus_confusions)
 
         # Cache check: a dive for this exact node content + level + mastery band
-        # may already exist (this or any other session). A hit narrates
-        # instantly and replays the material cards from the DB — zero LLM calls.
+        # + depth rung may already exist (this or any other session). A hit
+        # narrates instantly and replays the material cards from the DB — zero
+        # LLM calls.
         key = cache.dive_key(
             nid,
             level,
             f"{node.title}\n{node.hook or ''}\n{node.body or ''}",
             band=band,
+            depth=depth,
         )
         hit = await self._dive_cache.get(key) if self._dive_cache else None
         if hit is not None:
@@ -450,13 +489,39 @@ class Companion:
                 yield ev
             return
 
-        # 1) streamed explanation — flush whole sentences so TTS reads naturally.
+        # 1) the card itself first — hook, then the notes — but only on the
+        #    first pass. The learner opened this card to hear *it*; the
+        #    generated elaboration below builds beyond the notes instead of
+        #    replacing them. Included in `spoken` so cached replays read the
+        #    card too. Deeper rungs skip straight to new material.
+        spoken: list[str] = []
+        if depth == 0:
+            for text in (node.hook, node.body):
+                for s in _speakable_sentences(text or ""):
+                    spoken.append(s)
+                    yield _ev("say", text=s, node_id=str(nid))
+
+        # What was already said about this card (earlier rungs + discussion),
+        # so a deeper pass advances instead of repeating. From the durable log,
+        # capped so the prompt stays bounded.
+        prior = ""
+        if depth > 0:
+            turns = await self._discussion_history(cid, nid)
+            prior = " ".join(t["text"] for t in turns if t["role"] == "tutor")[-1500:]
+
+        # 2) streamed explanation — flush whole sentences so TTS reads naturally.
         #    `level` shapes only this ephemeral talk; the study materials below
         #    persist at the canonical register regardless of the learner's level.
         buf = ""
-        spoken: list[str] = []
         async for chunk in self._elaborator.explain(
-            node, level=level, learner_clause=_band_clause(band)
+            node,
+            level=level,
+            learner_clause=_band_clause(band),
+            depth=depth,
+            neighbor_titles=neighbor_titles,
+            prior=prior,
+            checkout_id=cid,
+            user_id=owner,
         ):
             buf += chunk
             buf, sentences = _flush_sentences(buf)
@@ -467,6 +532,17 @@ class Companion:
         if tail:
             spoken.append(tail)
             yield _ev("say", text=tail, node_id=str(nid))
+
+        # Deeper rungs are talk only: the study materials already exist from the
+        # first pass — regenerating them would only duplicate.
+        if depth > 0:
+            await self._track(cid, nid, "deep_dive")
+            if self._dive_cache:
+                await self._dive_cache.put(
+                    key, {"sentences": spoken, "materials": [], "edges": []}
+                )
+            yield _ev("done", nodes=0)
+            return
 
         # Derived cards are leaves: a study artifact (Key points / Analogy) or a
         # rabbit-hole "deeper look" node. Explaining one in place is the whole
@@ -482,7 +558,7 @@ class Companion:
             yield _ev("done", nodes=0)
             return
 
-        # 2) study materials -> persist through the canonicalize chokepoint, each
+        # 3) study materials -> persist through the canonicalize chokepoint, each
         # linked back to the source node so they replay and grow the graph.
         yield _ev("status", phase="materials", detail="capturing key points…")
         materials = await self._elaborator.materials(
@@ -568,19 +644,22 @@ class Companion:
         is echoed as a `discuss` event so the durable log replays both sides.
         """
         cid, nid = UUID(str(checkout_id)), UUID(str(node_id))
-        owner = await self._library.checkout_owner(cid)
-        node = (await self._content.get_subgraph([nid], depth=0)).nodes[0]
-
-        # History before the echo, so the current message isn't double-counted.
-        history = await self._discussion_history(cid, nid)
+        # The pre-answer reads are independent — one round-trip's latency, not
+        # four, before the first spoken word. History is read before the echo,
+        # so the current message isn't double-counted.
+        owner, sub, history, ctx = await asyncio.gather(
+            self._library.checkout_owner(cid),
+            self._content.get_subgraph([nid], depth=0),
+            self._discussion_history(cid, nid),
+            self._learning.learner_context(cid, nid),
+        )
+        node = sub.nodes[0]
         yield _ev("discuss", node_id=str(nid), role="learner", text=message)
 
         # Personal context for the reply: discussion is uncached and one-to-one,
         # so it gets the full read — focal mastery band plus the learner's
         # weak/strong neighboring concepts.
-        learner = await self._learner_clause(
-            await self._learning.learner_context(cid, nid)
-        )
+        learner = await self._learner_clause(ctx)
 
         # 1) streamed answer — whole sentences so TTS reads naturally; pinned to
         #    the card via node_id (same path the deep-dive narration uses).
@@ -601,6 +680,9 @@ class Companion:
         answer = " ".join(parts)
 
         await self._track(cid, nid, "discussed", {"message": message})
+        # The answer is complete — release the learner's "thinking" cue now.
+        # Auto-accretion below is housekeeping; its cards stream in afterwards.
+        yield _ev("done")
 
         # 2) auto-accrete: did the exchange surface a genuinely new concept? If so,
         #    build it (reuse-or-generate+ground) and link it back to this card.
@@ -626,7 +708,6 @@ class Companion:
                     payload={"via": "discuss"},
                 )
             )
-        yield _ev("done")
 
     async def enrich(
         self, checkout_id: UUID, node_id: UUID
@@ -746,9 +827,14 @@ class Companion:
         subject: str,
         *,
         user_id: UUID | None = None,
+        sink=None,
     ) -> tuple[Node, list[StreamEvent]]:
-        """Return the resolved canonical node + the events to emit for it."""
+        """Resolve one concept: reuse, or generate -> optimistic render ->
+        ground -> canonicalize. Events flow to `sink` the moment they are
+        produced (so a live consumer renders the card before grounding
+        finishes); with no sink they accumulate and return as a list."""
         events: list[StreamEvent] = []
+        emit = sink or events.append
         # Reuse on an exact canonical-key hit (definitive) or a strong semantic
         # match. Exact-key mirrors the canonicalizer and is robust even though node
         # embeddings encode hook+body rather than the bare title.
@@ -758,8 +844,8 @@ class Companion:
             if hits and hits[0].score >= self._s.companion_reuse_threshold:
                 existing = hits[0].node
         if existing is not None:
-            events.append(_ev("say", text=existing.title))
-            events.append(
+            emit(_ev("say", text=existing.title))
+            emit(
                 _ev(
                     "node.create",
                     temp_id=str(existing.id),
@@ -769,16 +855,45 @@ class Companion:
             )
             return existing, events
 
-        # gap -> generate, ground, optimistic render, then canonicalize
+        # gap -> generate, render optimistically, then ground + canonicalize.
+        # The learner sees the drafted card immediately; grounding (the slow,
+        # search-injected local pass) resolves behind it and lands as the
+        # node.update — the reconciliation principle the stream already uses
+        # for canonical ids (specs/00 #6).
         candidate = await self._generator.generate(
             title, subject, checkout_id=checkout_id, user_id=user_id
         )
+        emit(_ev("say", text=title))
+        temp_id = str(uuid4())
+        emit(_ev("node.create", temp_id=temp_id, node=_candidate_payload(candidate)))
         candidate = await self._researcher.ground(
             candidate, checkout_id=checkout_id, user_id=user_id
         )
-        events.append(_ev("say", text=title))
-        node, persist_events = await self._persist_candidate(candidate)
-        events.extend(persist_events)
+        result = await self._ingestion.canonicalize(candidate)
+        node = result.node
+        flagged = node.confidence < self._s.companion_confidence_floor
+        emit(
+            _ev(
+                "node.update",
+                temp_id=temp_id,
+                canonical_id=str(node.id),
+                patch={
+                    "action": result.action,
+                    "origin": node.origin,
+                    "confidence": node.confidence,
+                    "locked": node.locked,
+                    "flagged_low_confidence": flagged,
+                },
+            )
+        )
+        if flagged:
+            emit(
+                _ev(
+                    "status",
+                    phase="flagged",
+                    detail=f"{node.title} is below the confidence floor",
+                )
+            )
         return node, events
 
     async def _track(

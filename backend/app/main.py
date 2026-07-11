@@ -5,6 +5,7 @@ without crashing if it's unreachable (skeleton boots standalone)."""
 from __future__ import annotations
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -20,10 +21,26 @@ from .errors import DomainError
 log = logging.getLogger("axon")
 
 
+def _warm_tts() -> None:
+    """Background TTS warmup: absorb the cold model load at startup instead of
+    on the learner's first spoken sentence. Failure is non-fatal — the engine
+    just lazy-loads on first use as before."""
+    try:
+        from .deps import tts_engine
+
+        tts_engine().warm()
+        log.info("TTS engine warmed")
+    except Exception:  # noqa: BLE001 - warmup is best-effort
+        log.warning("TTS warmup failed; voice will lazy-load on first use")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not await db.ping():
         log.warning("database not reachable at startup — running without persistence")
+    s = get_settings()
+    if s.voice_enabled and s.tts_warm_on_start:
+        threading.Thread(target=_warm_tts, name="tts-warmup", daemon=True).start()
     yield
     await bus.close()
     await db.dispose()

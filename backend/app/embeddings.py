@@ -65,15 +65,18 @@ class OllamaEmbedder:
         self.model = model
         self.dim = dim
         self.timeout = timeout
+        # One pooled client for the embedder's lifetime (it's a process-wide
+        # singleton via deps) — a turn embeds many titles, and a fresh client
+        # per call pays connection setup every time.
+        self._client = httpx.AsyncClient(timeout=timeout)
 
     async def embed(self, text: str) -> list[float]:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(
-                f"{self.base_url}/api/embeddings",
-                json={"model": self.model, "prompt": text},
-            )
-            resp.raise_for_status()
-            vec = resp.json()["embedding"]
+        resp = await self._client.post(
+            f"{self.base_url}/api/embeddings",
+            json={"model": self.model, "prompt": text},
+        )
+        resp.raise_for_status()
+        vec = resp.json()["embedding"]
         if len(vec) != self.dim:
             raise ValueError(
                 f"embedding dim mismatch: model returned {len(vec)}, expected {self.dim}"

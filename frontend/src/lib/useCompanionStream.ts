@@ -136,9 +136,9 @@ export function useCompanionStream(
     [send, setBusy],
   );
   const explain = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, depth = 0) => {
       setBusy(true);
-      send({ type: "explain", node_id: nodeId });
+      send({ type: "explain", node_id: nodeId, depth });
     },
     [send, setBusy],
   );

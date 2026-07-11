@@ -44,6 +44,92 @@ async def test_gateway_embed_uses_embedder():
     assert len(vec) == 768
 
 
+class _CloudStub:
+    """Duck-typed AnthropicChat: records the model each stream was asked for."""
+
+    def __init__(self) -> None:
+        self.models: list[str | None] = []
+
+    async def stream(self, msgs, *, model=None, raw=False):
+        self.models.append(model)
+        yield "deep "
+        yield "answer."
+
+    async def complete(self, msgs, *, model=None):
+        self.models.append(model)
+        return "deep answer."
+
+
+class _RecordingMeter:
+    def __init__(self) -> None:
+        self.records: list[dict] = []
+
+    async def record(self, **kw) -> float:
+        self.records.append(kw)
+        return 0.01
+
+
+class _OpenBudget:
+    async def spent(self, *a, **k) -> float:
+        return 0.0
+
+    async def over_soft_limit(self, **k) -> bool:
+        return False
+
+
+class _TrippedBudget(_OpenBudget):
+    async def over_soft_limit(self, **k) -> bool:
+        return True
+
+
+async def test_stream_deep_dive_routes_to_reason_model_and_meters():
+    """task='deep_dive' streams from the reasoning model (not the cheap tier)
+    and the call is metered like any other cloud call."""
+    settings = _offline_settings()
+    cloud = _CloudStub()
+    meter = _RecordingMeter()
+    from app.cost import CostController, RoutingPolicy
+
+    gw = LLMGateway(
+        settings,
+        DeterministicEmbedder(768),
+        anthropic_chat=cloud,
+        fake=FakeLLM(),
+        controller=CostController(RoutingPolicy(settings), meter, _OpenBudget()),
+    )
+    msgs = [Msg(role="user", content="go deeper")]
+    out = "".join([c async for c in gw.stream(msgs, "fast", task="deep_dive")])
+
+    assert out == "deep answer."
+    assert cloud.models == [settings.model_reason]
+    assert len(meter.records) == 1
+    assert meter.records[0]["task"] == "deep_dive"
+    assert meter.records[0]["routed"].model == settings.model_reason
+
+
+async def test_stream_deep_dive_degrades_to_local_when_over_budget():
+    """The budget breaker still governs task-routed streams: over the soft
+    limit, deep_dive falls back to the fast lane and nothing is metered."""
+    settings = _offline_settings()
+    cloud = _CloudStub()
+    meter = _RecordingMeter()
+    from app.cost import CostController, RoutingPolicy
+
+    gw = LLMGateway(
+        settings,
+        DeterministicEmbedder(768),
+        anthropic_chat=cloud,
+        fake=FakeLLM(lambda _m: "LOCAL"),
+        controller=CostController(RoutingPolicy(settings), meter, _TrippedBudget()),
+    )
+    msgs = [Msg(role="user", content="go deeper")]
+    out = "".join([c async for c in gw.stream(msgs, "fast", task="deep_dive")])
+
+    assert "LOCAL" in out  # no fast gateway configured -> the fake stands in
+    assert cloud.models == []  # the cloud model was never touched
+    assert meter.records == []  # local work is never metered
+
+
 def test_sse_delta_skips_non_delta_lines():
     # well-formed content delta
     assert _sse_delta('{"choices":[{"delta":{"content":"hi"}}]}') == "hi"
