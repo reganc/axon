@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "${AXON_DB_PORT:-4102}:5432"   # dev convenience; internal-only in prod
+      - "127.0.0.1:${AXON_DB_PORT:-4102}:5432"   # dev convenience, this host only; internal-only in prod
     volumes:
       - dbdata:/home/postgres/pgdata/data
       - ./artifacts/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
@@ -27,7 +27,7 @@ services:
   cache:
     image: redis:7-alpine
     ports:
-      - "${AXON_REDIS_PORT:-4103}:6379"   # dev convenience; internal-only in prod
+      - "127.0.0.1:${AXON_REDIS_PORT:-4103}:6379"   # dev convenience, this host only; internal-only in prod
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
