@@ -86,7 +86,7 @@ jobs:
 
   e2e:
     name: E2E (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.60 does not support ubuntu-latest (26.04)
     services:
       postgres:
         image: pgvector/pgvector:pg16
